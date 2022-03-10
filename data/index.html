@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <!--Sprinkler controller HTML-->
+    <!--meta http-equiv="refresh" content="10" -->
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="cache-control" content="no-cache">	
+    <title>Sprinkler Control</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <script type="text/javascript">
+
+        function init() {
+		  // get a new date (locale machine date time)
+          var date = new Date();
+          // get the date as a string
+          var n = date.toDateString();
+          // get the time as a string
+          var time = date.toLocaleTimeString();
+          // find the html element with the id of time
+          // set the innerHTML of that element to the date a space the time
+          document.getElementById('time').innerHTML = n + ' ' + time;
+		  document.getElementById("vcontrol").reset();  // clear old operations
+        }
+ 
+    
+        function httpGet(theUrl)
+        {
+            var xmlHttp = new XMLHttpRequest();
+            xmlHttp.open( "GET", theUrl, true ); // false for synchronous request
+            xmlHttp.send( null );
+            //console.log(xmlHttp.responseText);
+			// window.location.reload();
+            // return xmlHttp.responseText;
+        }
+        
+        function getTime() {
+          // get a new date (locale machine date time)
+          var date = new Date();
+          var hr = date.getHours();
+          var mn = date.getMinutes();
+          var dy = date.getDate();
+          var url ="/index.html?minute=" + mn + "&hour=" + hr + "&day=" + dy;
+          return url;
+        } 
+		
+         function fakeTime() {
+          // fake the run time to force a run of all valves
+          var url ="/index.html?minute=" + 10 + "&hour=" + 7 + "&day=" + 3;
+          return url;
+        } 
+               
+     </script>
+</head>
+
+<body onload="javascript:init()" >
+    <div class="main_block flex-container">
+
+        <div class="time">
+           <h2>Time</h2>
+           <h4><span class="timep-text" id="time" >???</span> </h4><br>
+           <button type="button" id="myBtn" onclick="httpGet(getTime())">Set Time</button> 
+           <br><br>
+           <button type="button" id="testBtn" onclick="httpGet(fakeTime())">Test All</button> 
+           <br><br>
+ 		   <button type="button" id="refresh" onclick="window.location.reload()">Refresh Screen</button> 
+        </div>
+        
+        <div class="valve">
+            <h2>Valves</h2>
+            <form action="/index.html" method="get" id="vcontrol"> <!--post back to this same page-->
+              <input type="radio" id="v1" name="sprinkler_valve" value="v1">
+              <label for="v1">V1</label><br>
+              <input type="radio" id="v2" name="sprinkler_valve" value="v2">
+              <label for="v2">V2</label><br>
+              <input type="radio" id="v3" name="sprinkler_valve" value="v3">
+              <label for="v3">V3</label><br>
+              <input type="radio" id="v4" name="sprinkler_valve" value="v4">
+              <label for="v4">V4</label><br>
+              <input type="radio" id="v5" name="sprinkler_valve" value="v5">
+              <label for="v5">V5</label><br>
+              <input type="radio" id="v6" name="sprinkler_valve" value="v6">
+              <label for="v6">V6</label><br><br>
+              <input type="submit" value="Activate">
+            </form>         
+        </div>
+		
+		
+        <div  class="text_info">  <!--get operation results page from server-->
+           <h2>Operation</h2>
+		   <embed id="op_info" type="text/html" src="/operation"  width="100%" height="200">
+        </div>
+
+    </div>
+</body>
+
+</html>
