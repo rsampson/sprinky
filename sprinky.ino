@@ -9,19 +9,19 @@
 #include <BufferPrinter.h>  // https://github.com/bakercp/BufferUtils
 #include <Adafruit_SleepyDog.h>  // watchdog
 
-#define LED_ON LOW   // for working the built in LED
-#define LED_OFF HIGH
+//#define RELAY8
 
-#define RELAY8
 #ifdef RELAY8
-#define BLINK_LED 10  // 10 is a dummy LED for the 8 relay board, it does nothing
+#define NAME "sprinky8"
 #else
-#define BLINK_LED 5
+#define NAME "sprinky4"
 #endif
+
 //  ********** Set watering schedule here **********
 
 #define RUN_HOUR 7       // hour to start running
 #define RUN_MINUTE 10    // minute to start running 
+
 #define DURATION1 1      // how long to run staton 1, etc
 #define DURATION2 2
 #define DURATION3 2
@@ -30,6 +30,16 @@
 #define DURATION6 4
 #define DURATION7 1
 #define DURATION8 1
+
+#define LED_ON LOW   // for working the built in LED
+#define LED_OFF HIGH
+
+
+#ifdef RELAY8
+#define BLINK_LED 10  // 10 is a dummy LED for the 8 relay board, it does nothing
+#else
+#define BLINK_LED 5
+#endif
 
 const size_t bufferSize = 400;
 uint8_t charBuf[bufferSize];
@@ -64,12 +74,16 @@ auto timer_led = timer_create_default(); // create a timer to blink led
 
 bool toggle_led(void *) {
   digitalWrite(BLINK_LED, !digitalRead(BLINK_LED)); // toggle the LED
+  controlRelays();  // activate relay if correct time
   return true; // repeat? true
 }
+
+bool manualOp = false;
 
 bool shutOff(void *) {  // make timer api happy
   allOff();
   timer.cancel();
+  manualOp = false;
   Serial.print("timer shut off ");
   return (false);
 }
@@ -116,6 +130,7 @@ void handleParameters() {
   // handle valve actuation from web client
   if (webServer.hasArg("sprinkler_valve")) {
     timer.in(60000, shutOff);  // turn off any manually activated valve after an minute
+    manualOp = true;           // indicate in manual mode
     if      (webServer.arg("sprinkler_valve") == "v1") relayOn(0);   // only use 6 stations for now
     else if (webServer.arg("sprinkler_valve") == "v2") relayOn(1);
     else if (webServer.arg("sprinkler_valve") == "v3") relayOn(2);
@@ -135,7 +150,7 @@ int last_m;  // time of last operations
 int last_h;
 int last_d;
 
-void handleOperatonFeeedback() {
+void handleOperatonFeedback() { // embedded page that displays the recent operations
   printer.print("<br> last op "); // display time of last operation
   printer.print(last_m);
   printer.print(" min ");
@@ -148,9 +163,10 @@ void handleOperatonFeeedback() {
   char temp[500];
   snprintf(temp, sizeof(temp),
 
-           "<html>\
+"<html>\
   <head>\
     <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
+    <meta http-equiv=\"Content-type\" content=\"text/html;charset=UTF-8\">\
     <title>Feedback</title>\
     <style>\
       body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; \
@@ -169,6 +185,34 @@ void handleOperatonFeeedback() {
   webServer.send(200, "text/html", temp);
   printer.setOffset(0);  // reset printer buffer
   memset(charBuf, 0, sizeof(charBuf));
+}
+
+void handleName() {  // embedded page that displays the station name
+
+  char _name[] = NAME;
+  char temp[500];
+  snprintf(temp, sizeof(temp),
+
+"<html>\
+  <head>\
+    <meta http-equiv=\"Content-type\" content=\"text/html;charset=UTF-8\">\
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
+    <title>Name</title>\
+    <style>\
+      body { font-family: Arial, Helvetica, Sans-Serif; \
+      font-size: 14px; Color: #000088; }\
+    </style>\
+  </head>\
+  <body>\
+    <p>%s</p>\
+  </body>\
+</html>",
+
+           _name );  // put name in %s above
+
+  //  Serial.write(temp);  // examine web page html for test
+  //  Serial.println();
+  webServer.send(200, "text/html", temp);
 }
 
 void handleStyle()
@@ -254,11 +298,11 @@ void relayConfig( ) {
 }
 
 void controlRelays() {
-  if (true) {  // run every day for now
+  if (!manualOp) {  // if not being operated manually
     //if (weekday() == FRIDAY ||  weekday() == TUESDAY || weekday() == THURSDAY) {
     if (hour() == RUN_HOUR) {
       if     (minute() < START1) {
-        allOff();
+        allOff();  // it's to soon in the hour
       }
       if     (minute() >= START1 && minute() < START2) {
         relayOn(0);
@@ -287,9 +331,9 @@ void controlRelays() {
       }
 #endif
       else {
-        allOff();
+        allOff();  // not the run minute
       }
-    }
+    } else  allOff(); // not the run hour
   }
 }
 
@@ -310,11 +354,7 @@ void setup() {
   Serial.println();
   Serial.println("started");
 
-#ifdef RELAY8
-  WiFi.softAP("sprinky8");
-#else
-  WiFi.softAP("sprinky4");
-#endif
+  WiFi.softAP(NAME);
 
   Serial.println("connected");
 
@@ -327,20 +367,19 @@ void setup() {
     return;
   }
   Serial.println("FS mounted");
-  webServer.on("/operation", handleOperatonFeeedback);
+  webServer.on("/operation.html", handleOperatonFeedback);
+  webServer.on("/name.html", handleName);
   webServer.on("/style.css", handleStyle);
   webServer.on("/favicon.ico", handleFavicon);
   webServer.onNotFound(handleRoot); // needed to make auto sign in work
   webServer.begin();
 
-#ifdef RELAY8
-  ArduinoOTA.setHostname("sprinky8");
-#else
-  ArduinoOTA.setHostname("sprinky4");
-#endif
+  ArduinoOTA.setHostname(NAME);
   ArduinoOTA.begin();
+  
+  int countdownMS = Watchdog.enable(1000); 
+   
   Serial.println("Starting server");
-  int countdownMS = Watchdog.enable(1000);
 }
 
 
@@ -348,8 +387,7 @@ void loop() {
   webServer.handleClient();
   dnsServer.processNextRequest(); // captive portal support
   ArduinoOTA.handle();
-  timer.tick();      // valve test shut off
+  timer.tick();      // valve run & shut off
   timer_led.tick();  // blink led "heart beat"
-  controlRelays();
   Watchdog.reset();
 }
