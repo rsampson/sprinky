@@ -9,7 +9,7 @@
 #include <BufferPrinter.h>  // https://github.com/bakercp/BufferUtils
 #include <Adafruit_SleepyDog.h>  // watchdog
 
-//#define RELAY8
+#define RELAY8
 
 #ifdef RELAY8
 #define NAME "sprinky8"
@@ -22,12 +22,21 @@
 #define RUN_HOUR 7       // hour to start running
 #define RUN_MINUTE 10    // minute to start running 
 
+//#define DURATION1 1      // how long to run staton 1, etc
+//#define DURATION2 2
+//#define DURATION3 2
+//#define DURATION4 4
+//#define DURATION5 2
+//#define DURATION6 4
+//#define DURATION7 1
+//#define DURATION8 1
+
 #define DURATION1 1      // how long to run staton 1, etc
 #define DURATION2 2
-#define DURATION3 2
-#define DURATION4 4
-#define DURATION5 2
-#define DURATION6 4
+#define DURATION3 3
+#define DURATION4 5
+#define DURATION5 3
+#define DURATION6 5
 #define DURATION7 1
 #define DURATION8 1
 

@@ -3,11 +3,10 @@
 
 <head>
     <!--Sprinkler controller HTML-->
-    <!--meta http-equiv="refresh" content="10" -->
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="cache-control" content="no-cache">
-    <meta http-equiv='expires' content='0'>
-    <meta http-equiv='pragma' content='no-cache'>
+    <!--meta http-equiv="cache-control" content="no-cache">
+    <meta http-equiv="expires" content="0">
+    <meta http-equiv="pragma" content="no-cache"-->
     <title>Sprinkler Control</title>
     <link rel="stylesheet" type="text/css" href="style.css">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
@@ -22,7 +21,7 @@
           var time = date.toLocaleTimeString();
           // find the html element with the id of time
           // set the innerHTML of that element to the date a space the time
-          document.getElementById('time').innerHTML = n + ' ' + time;
+          document.getElementById("time").innerHTML = n + ' ' + time;
 		  document.getElementById("vcontrol").reset();  // clear old operations
         }
  
@@ -32,9 +31,6 @@
             var xmlHttp = new XMLHttpRequest();
             xmlHttp.open( "GET", theUrl, true ); // false for synchronous request
             xmlHttp.send( null );
-            //console.log(xmlHttp.responseText);
-			// window.location.reload();
-            // return xmlHttp.responseText;
         }
         
         function getTime() {
@@ -73,7 +69,7 @@
     <div class="main_block flex-container" id="main_stuff">
 
         <div class="time">
-		   <iframe id="device name" src="/name.html"  width="50%" height="40">   </iframe>   
+		   <iframe id="device name" src="/name.html"  width="70%" height="40">   </iframe>   
            <h2>Time</h2>
            <h4><span class="timep-text" id="time" >???</span> </h4><br>
            <button type="button" id="myBtn" onclick="httpGet(getTime())">Set Time</button> 
@@ -85,7 +81,7 @@
         
         <div class="valve">
             <h2>Valves</h2>
-            <form action="/index.html" accept-charset="utf-8" method="get" id="vcontrol"> <!--post back to this same page-->
+            <form action="/index.html"  method="get" id="vcontrol"> <!--post back to this same page-->
               <input type="radio" id="v1" name="sprinkler_valve" value="v1">
               <label for="v1">V1</label>  <br>
               <input type="radio" id="v2" name="sprinkler_valve" value="v2">
