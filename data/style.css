@@ -19,9 +19,9 @@
   border: 1px solid rgba(0, 0, 0, 0.8);
   border-radius: 10px;
   text-align: left;
-  margin: 10px 10px 10px 10px;
-  width: 33%;
-  padding: 20px;
+  margin: 5px 5px 5px 5px;
+  width: 30%;
+  padding: 10px;
 }
 
 .text_info {
@@ -32,6 +32,3 @@
 	  border-radius: 10px;
 }
 
-#device_name {
-	  border-radius: 10px;
-}

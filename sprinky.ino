@@ -8,8 +8,10 @@
 #include <ArduinoOTA.h>
 #include <BufferPrinter.h>  // https://github.com/bakercp/BufferUtils
 #include <Adafruit_SleepyDog.h>  // watchdog
+#include <WebSocketsServer.h>
+#include <ArduinoJson.h>
 
-#define RELAY8
+//#define RELAY8
 
 #ifdef RELAY8
 #define NAME "sprinky8"
@@ -31,11 +33,11 @@
 //#define DURATION7 1
 //#define DURATION8 1
 
-#define DURATION1 1      // how long to run staton 1, etc
-#define DURATION2 2
-#define DURATION3 3
-#define DURATION4 5
-#define DURATION5 3
+#define DURATION1 2      // how long to run staton 1, etc
+#define DURATION2 3
+#define DURATION3 4
+#define DURATION4 6
+#define DURATION5 4
 #define DURATION6 5
 #define DURATION7 1
 #define DURATION8 1
@@ -61,6 +63,7 @@ BufferPrinter printer(charBuf, bufferSize);
 const byte DNS_PORT = 53;
 DNSServer dnsServer;
 ESP8266WebServer webServer(80);
+WebSocketsServer webSocket = WebSocketsServer(81);
 
 void handleFile(const String& file, const String& contentType)
 {
@@ -68,7 +71,7 @@ void handleFile(const String& file, const String& contentType)
   if (!f) {
     Serial.println("***Error opening " + file + " ***");
     webServer.send(200, "text/plain", "error sending " + file);
-  } else {   
+  } else {
     int file_size = f.size();
     int size_returned = webServer.streamFile(f, contentType);
     if ( size_returned != file_size) {
@@ -78,13 +81,64 @@ void handleFile(const String& file, const String& contentType)
   }
   f.close();
 }
+/*
+  void sendSocket() {
+  String json = "{\"name\":";
+  json +=  "\"";
+  json += NAME;
+  json += "\"";
+
+  int sensorValue = analogRead(A0);
+  // map diode voltage to temperature F
+  float tempF = map(sensorValue, 625, 400, 32, 212); // 32 deg was .650v
+  json += ",\"temp\":";
+  json += String(tempF, 1);
+  json += "}";
+  Serial.println(json);
+  webSocket.broadcastTXT(json.c_str(), json.length());
+  }
+*/
+void sendSocket() {
+  const int buflen = 100;
+  char cbuff[buflen];
+  StaticJsonDocument<200> doc;
+  
+  doc["name"] = NAME;
+  int sensorValue = analogRead(A0);
+  // map diode voltage to temperature F
+  float tempF = map(sensorValue, 625, 400, 32, 212); // 32 deg was .650v
+  doc["temp"]   = tempF;
+
+  serializeJson(doc, cbuff, buflen);
+
+  webSocket.broadcastTXT(cbuff, strlen(cbuff));
+}
+
 auto timer = timer_create_default(); // create a timer with default settings
 auto timer_led = timer_create_default(); // create a timer to blink led
 
 bool toggle_led(void *) {
   digitalWrite(BLINK_LED, !digitalRead(BLINK_LED)); // toggle the LED
   controlRelays();  // activate relay if correct time
+  sendSocket(); // ping browser to verify connection
   return true; // repeat? true
+}
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) { // When a WebSocket message is received
+  switch (type) {
+    case WStype_DISCONNECTED:             // if the websocket is disconnected
+      Serial.printf("Disconnected!\n");
+      break;
+    case WStype_CONNECTED: {      // if a new websocket connection is established
+        IPAddress ip = webSocket.remoteIP(num);
+        Serial.printf("Connected from %d.%d.%d.%d url: %s\n", ip[0], ip[1], ip[2], ip[3], payload);
+      }
+      break;
+    default: {
+        Serial.print("WStype = ");
+        Serial.println(type);
+      }
+  }
 }
 
 bool manualOp = false;
@@ -111,7 +165,7 @@ void handleParameters() {
     message += webServer.arg(i);
   }
   Serial.println(message);
-  
+
   char cBuf[200];
   message.toCharArray(cBuf, sizeof(cBuf));
   // printer.print(cBuf);
@@ -172,7 +226,7 @@ void handleOperatonFeedback() { // embedded page that displays the recent operat
   char temp[500];
   snprintf(temp, sizeof(temp),
 
-"<html>\
+           "<html>\
   <head>\
     <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
     <meta http-equiv=\"Content-type\" content=\"text/html;charset=UTF-8\">\
@@ -196,41 +250,16 @@ void handleOperatonFeedback() { // embedded page that displays the recent operat
   memset(charBuf, 0, sizeof(charBuf));
 }
 
-void handleName() {  // embedded page that displays the station name
-
-  char _name[] = NAME;
-  char temp[500];
-  snprintf(temp, sizeof(temp),
-
-"<html>\
-  <head>\
-    <meta http-equiv=\"Content-type\" content=\"text/html;charset=UTF-8\">\
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
-    <title>Name</title>\
-    <style>\
-      body { font-family: Arial, Helvetica, Sans-Serif; \
-      font-size: 14px; Color: #000088; }\
-    </style>\
-  </head>\
-  <body>\
-    <p>%s</p>\
-  </body>\
-</html>",
-
-           _name );  // put name in %s above
-
-  //  Serial.write(temp);  // examine web page html for test
-  //  Serial.println();
-  webServer.send(200, "text/html", temp);
-}
 
 void handleStyle()
 {
+  Serial.println("style");
   handleFile("/style.css", "text/css");
 }
 
 void handleFavicon()
 {
+  Serial.println("icon");
   handleFile("/favicon.ico", "image/x-icon");
 }
 
@@ -264,7 +293,7 @@ int relay[4] = {16, 14, 12, 13};
 #define START7  START6 + DURATION6
 #define START8  START7 + DURATION7
 
-#ifdef  RELAY8 
+#ifdef  RELAY8
 #define ON LOW
 #define OFF HIGH
 #else
@@ -348,13 +377,13 @@ void controlRelays() {
 
 // ********** SETP AND LOOP *****************
 void setup() {
+
   relayConfig();
   allOff();
+
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LED_OFF);
   pinMode(BLINK_LED, OUTPUT); // set LED pin to OUTPUT
-  // call the toggle_led function every 1000 millis (1 second)
-  timer_led.every(1000, toggle_led);
 
   Serial.begin(115200);
   while (!Serial) {
@@ -377,17 +406,22 @@ void setup() {
   }
   Serial.println("FS mounted");
   webServer.on("/operation.html", handleOperatonFeedback);
-  webServer.on("/name.html", handleName);
   webServer.on("/style.css", handleStyle);
   webServer.on("/favicon.ico", handleFavicon);
   webServer.onNotFound(handleRoot); // needed to make auto sign in work
   webServer.begin();
 
+  webSocket.onEvent(webSocketEvent);
+  webSocket.begin();
+
   ArduinoOTA.setHostname(NAME);
   ArduinoOTA.begin();
-  
-  int countdownMS = Watchdog.enable(1000); 
-   
+
+  int countdownMS = Watchdog.enable(1000);
+
+  // call the toggle_led function every 1000 millis (1 second)
+  timer_led.every(1000, toggle_led);
+
   Serial.println("Starting server");
 }
 
@@ -399,4 +433,5 @@ void loop() {
   timer.tick();      // valve run & shut off
   timer_led.tick();  // blink led "heart beat"
   Watchdog.reset();
+  webSocket.loop();
 }
