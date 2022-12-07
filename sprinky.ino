@@ -6,10 +6,11 @@
 #include <arduino-timer.h>
 #include <TimeLib.h>
 #include <ArduinoOTA.h>
-#include <BufferPrinter.h>  // https://github.com/bakercp/BufferUtils
+#include <CircularBuffer.h> // https://github.com/rlogiacco/CircularBuffer
 #include <Adafruit_SleepyDog.h>  // watchdog
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
+
 
 //#define RELAY8
 
@@ -21,7 +22,7 @@
 
 //  ********** Set watering schedule here **********
 
-#define RUN_HOUR 7       // hour to start running
+#define RUN_HOUR 2       // hour to start running
 #define RUN_MINUTE 10    // minute to start running 
 
 //#define DURATION1 1      // how long to run staton 1, etc
@@ -33,12 +34,12 @@
 //#define DURATION7 1
 //#define DURATION8 1
 
-#define DURATION1 2      // how long to run staton 1, etc
+#define DURATION1 3      // how long to run staton 1, etc
 #define DURATION2 3
 #define DURATION3 4
-#define DURATION4 6
-#define DURATION5 4
-#define DURATION6 5
+#define DURATION4 7
+#define DURATION5 5
+#define DURATION6 6
 #define DURATION7 1
 #define DURATION8 1
 
@@ -52,10 +53,30 @@
 #define BLINK_LED 5
 #endif
 
-const size_t bufferSize = 400;
-uint8_t charBuf[bufferSize];
-BufferPrinter printer(charBuf, bufferSize);
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
 
+const size_t bufferSize = 400;
+char charBuf[bufferSize];
+
+// Create a circular buffer for debug output on web page
+CircularBuffer<char, (bufferSize - 40)> buff;
+  
+// write string into circular buffer for later printout
+void webPrint(char * format, ...)
+{
+  char buffer[256];
+  va_list args;
+  va_start (args, format);
+  vsprintf (buffer, format, args);
+  Serial.println(buffer);
+  for (int i = 0; i < strlen(buffer); i++)
+    {
+     buff.push(buffer[i]);
+    }
+  va_end (args);
+}
 
 // ********** WEB SERVER STUFF *****************
 
@@ -73,40 +94,33 @@ void handleFile(const String& file, const String& contentType)
     webServer.send(200, "text/plain", "error sending " + file);
   } else {
     int file_size = f.size();
-    int size_returned = webServer.streamFile(f, contentType);
-    if ( size_returned != file_size) {
-      Serial.println("Sent less data than expected for " + file);
-      Serial.println("Got " + String(size_returned) + " expected " + String(file_size));
-    }
+   //webServer.sendHeader("Content-Length", (String)(file_size));
+   //webServer.sendHeader("Cache-Control", "max-age=2628000, public"); // cache for 30 days
+    size_t size_returned = webServer.streamFile(f, contentType);
+//    if ( size_returned != file_size) {
+//      Serial.println("Sent less data than expected for " + file);
+//      Serial.println("sent " + String(size_returned) + " expected " + String(file_size));
+//    }
   }
   f.close();
 }
-/*
-  void sendSocket() {
-  String json = "{\"name\":";
-  json +=  "\"";
-  json += NAME;
-  json += "\"";
 
-  int sensorValue = analogRead(A0);
-  // map diode voltage to temperature F
-  float tempF = map(sensorValue, 625, 400, 32, 212); // 32 deg was .650v
-  json += ",\"temp\":";
-  json += String(tempF, 1);
-  json += "}";
-  Serial.println(json);
-  webSocket.broadcastTXT(json.c_str(), json.length());
-  }
-*/
 void sendSocket() {
   const int buflen = 100;
   char cbuff[buflen];
   StaticJsonDocument<200> doc;
-  
+
+  doc["type"] = "temp";  // what type of data is being sent to client
   doc["name"] = NAME;
+
+#ifdef RELAY8
+  int sensorValue = 500;  // dummy value until we have hardware support.
+#else
   int sensorValue = analogRead(A0);
-  // map diode voltage to temperature F
-  float tempF = map(sensorValue, 625, 400, 32, 212); // 32 deg was .650v
+#endif 
+
+  // map diode voltage to temperature F  ( diode mv values recorded from freezing and boiling water)
+  float tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v) 
   doc["temp"]   = tempF;
 
   serializeJson(doc, cbuff, buflen);
@@ -147,14 +161,16 @@ bool shutOff(void *) {  // make timer api happy
   allOff();
   timer.cancel();
   manualOp = false;
-  Serial.print("timer shut off ");
+  Serial.println("timer shut off ");
   return (false);
 }
 
+
+
 // process the GET parameters sent from client
 void handleParameters() {
-  //   printer.print(webServer.args());
-  //   printer.print(" args<br>");
+  //   webPrint(webServer.args());
+  //   webPrint(" args<br>");
 
   String message;
   // message what we got
@@ -168,7 +184,7 @@ void handleParameters() {
 
   char cBuf[200];
   message.toCharArray(cBuf, sizeof(cBuf));
-  // printer.print(cBuf);
+  // webPrint(cBuf);
 
   // set internal clock time
   int m;
@@ -181,13 +197,7 @@ void handleParameters() {
 
   if (webServer.hasArg("minute") ||  webServer.hasArg("hour") || webServer.hasArg("day")) {
     setTime(h, m, 0, d, 1, 2022); // set time, only care about minute hour and day
-    printer.print("<br>Time set ");
-    printer.print(minute());
-    printer.print(" min ");
-    printer.print(hour());
-    printer.print(" hr ");
-    printer.print(day());
-    printer.print(" day");
+    webPrint("<br>Time set: day %2d hour %2d minute %2d",day(),hour(),minute() );
   }
 
   // handle valve actuation from web client
@@ -209,21 +219,45 @@ void handleRoot()
   if (webServer.args() > 0) handleParameters();
 }
 
-int last_m;  // time of last operations
-int last_h;
-int last_d;
+void handleOperatonFeedback() { // embedded page that displays the recent operations/ debug info
 
-void handleOperatonFeedback() { // embedded page that displays the recent operations
-  printer.print("<br> last op "); // display time of last operation
-  printer.print(last_m);
-  printer.print(" min ");
-  printer.print(last_h);
-  printer.print(" hr ");
-  printer.print(last_d);
-  printer.print(" day");
-  printer.write(0); // mark end of string
+  // read all of circular buffer into charBuff
+  // circular buffer contains recent debug print out
 
-  char temp[500];
+    Serial.print("ring buffer data available: ");
+    Serial.println(buff.available());
+     // trim old debug data   
+    while(buff.available() < 40) {
+      buff.shift();
+    }
+    // line up to first html break (<br>)
+   // while(buff.first() != char('<')) {
+   //   buff.shift();
+   // }
+
+    int i = 0;
+//   while (!buff.isEmpty()) {
+//      charBuf[i++] = buff.shift();
+//   }
+
+  int qty = buff.size();
+  Serial.print("buffer size: ");
+  Serial.println(qty);  
+  // unload ring buffer contents
+  
+  for(i = 0; i < qty; i++) {
+
+    charBuf[i] = buff.shift();
+    buff.push(charBuf[i]);
+  }
+
+  Serial.print("charBuf size: ");
+  Serial.println(strlen(charBuf));   
+ 
+  //char temp[bufferSize + 200];
+  char temp[1000];
+  
+  // create web page out of charBuf contents
   snprintf(temp, sizeof(temp),
 
            "<html>\
@@ -243,23 +277,21 @@ void handleOperatonFeedback() { // embedded page that displays the recent operat
 
            charBuf );
 
-  //  Serial.write(temp);  // examine web page html
-  //  Serial.println();
+  Serial.print("html string size: ");
+  Serial.println(strlen(temp));  
+  
   webServer.send(200, "text/html", temp);
-  printer.setOffset(0);  // reset printer buffer
-  memset(charBuf, 0, sizeof(charBuf));
+  memset(charBuf, 0, sizeof(charBuf));   // clean up 
 }
 
 
 void handleStyle()
 {
-  Serial.println("style");
   handleFile("/style.css", "text/css");
 }
 
 void handleFavicon()
 {
-  Serial.println("icon");
   handleFile("/favicon.ico", "image/x-icon");
 }
 
@@ -304,14 +336,9 @@ int relay[4] = {16, 14, 12, 13};
 // turn relay rl on, all others off
 void relayOn(int rl) {
   if (digitalRead(relay[rl]) == OFF ) {   // only turn ON  if it is currently OFF
-    Serial.print("relay ");
-    Serial.println(rl);
-    printer.print("<br>relay ");
-    printer.print(rl);
 
-    last_m = minute();    // record time of operation
-    last_h = hour();
-    last_d = day();
+    webPrint("<br>Valve %1d on at %2d day %2d hour %2d minute", rl + 1, day(), hour(), minute());
+
     int i;
     for (i = 0; i < sizeof relay / sizeof relay[0]; i++) { // make sure only one relay is on at a time
       digitalWrite(relay[i], i == rl ? ON : OFF);
@@ -325,7 +352,6 @@ void allOff() {
   for (i = 0; i < sizeof relay / sizeof relay[0]; i++) {
     digitalWrite(relay[i], OFF);
   }
-
 }
 
 void relayConfig( ) {
@@ -377,10 +403,10 @@ void controlRelays() {
 
 // ********** SETP AND LOOP *****************
 void setup() {
-
+   
   relayConfig();
   allOff();
-
+  
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LED_OFF);
   pinMode(BLINK_LED, OUTPUT); // set LED pin to OUTPUT
