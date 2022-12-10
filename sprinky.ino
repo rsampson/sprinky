@@ -25,7 +25,7 @@
 #define RUN_HOUR 2       // hour to start running
 #define RUN_MINUTE 10    // minute to start running 
 
-//#define DURATION1 1      // how long to run staton 1, etc
+//#define DURATION1 1      // how long to run staton 1, etc (winter)
 //#define DURATION2 2
 //#define DURATION3 2
 //#define DURATION4 4
@@ -34,7 +34,7 @@
 //#define DURATION7 1
 //#define DURATION8 1
 
-#define DURATION1 3      // how long to run staton 1, etc
+#define DURATION1 3      // how long to run staton 1, etc (summer)
 #define DURATION2 3
 #define DURATION3 4
 #define DURATION4 7
@@ -42,6 +42,15 @@
 #define DURATION6 6
 #define DURATION7 1
 #define DURATION8 1
+
+int runtime1 = DURATION1;
+int runtime2 = DURATION2;
+int runtime3 = DURATION3;
+int runtime4 = DURATION4;
+int runtime5 = DURATION5;
+int runtime6 = DURATION6;
+int runtime7 = DURATION7;
+int runtime8 = DURATION8;
 
 #define LED_ON LOW   // for working the built in LED
 #define LED_OFF HIGH
@@ -63,14 +72,21 @@ char charBuf[bufferSize];
 // Create a circular buffer for debug output on web page
 CircularBuffer<char, (bufferSize - 40)> buff;
   
-// write string into circular buffer for later printout
+// write string into circular buffer for later printout on browser
 void webPrint(char * format, ...)
 {
   char buffer[256];
+  
   va_list args;
   va_start (args, format);
   vsprintf (buffer, format, args);
   Serial.println(buffer);
+  // prepend an html break
+  buff.push('<');
+  buff.push('b');  
+  buff.push('r');
+  buff.push('>');
+  // put formated string into circular buffer
   for (int i = 0; i < strlen(buffer); i++)
     {
      buff.push(buffer[i]);
@@ -86,7 +102,7 @@ DNSServer dnsServer;
 ESP8266WebServer webServer(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-void handleFile(const String& file, const String& contentType)
+void handleFile(const String& file, const String& contentType) // stream data files to browser
 {
   File f = LittleFS.open(file, "r");
   if (!f) {
@@ -95,7 +111,6 @@ void handleFile(const String& file, const String& contentType)
   } else {
     int file_size = f.size();
    //webServer.sendHeader("Content-Length", (String)(file_size));
-   //webServer.sendHeader("Cache-Control", "max-age=2628000, public"); // cache for 30 days
     size_t size_returned = webServer.streamFile(f, contentType);
 //    if ( size_returned != file_size) {
 //      Serial.println("Sent less data than expected for " + file);
@@ -105,24 +120,57 @@ void handleFile(const String& file, const String& contentType)
   f.close();
 }
 
-void sendSocket() {
-  const int buflen = 100;
-  char cbuff[buflen];
-  StaticJsonDocument<200> doc;
-
-  doc["type"] = "temp";  // what type of data is being sent to client
-  doc["name"] = NAME;
-
+float getTempF() {
+  
 #ifdef RELAY8
-  int sensorValue = 500;  // dummy value until we have hardware support.
+  int sensorValue = 450;  // dummy value until we have hardware support.
 #else
-  int sensorValue = analogRead(A0);
+  int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
 #endif 
-
   // map diode voltage to temperature F  ( diode mv values recorded from freezing and boiling water)
   float tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v) 
-  doc["temp"]   = tempF;
 
+  return(tempF);
+}
+
+void handleOperatonMessage() { // embedded page that displays the recent operations/ debug info
+
+  // read all of circular buffer into charBuff
+  // circular buffer contains recent debug print out
+
+     // trim old debug data   
+    while(buff.available() < 40) {
+      buff.shift();
+    }
+    
+   // line up to first html break (<br>)
+   //while(buff[0] != '<') {
+   //   buff.shift();
+   //}
+
+  int qty = buff.size();
+  int i = 0; 
+  // unload ring buffer contents
+   for(i = 0; i < qty; i++) {
+
+    charBuf[i] = buff.shift();
+    buff.push(charBuf[i]);
+  }
+   charBuf[i + 1] = 0; //terminate string
+}
+
+void sendSocket() {
+  const int buflen = 600;
+  char cbuff[buflen];
+  StaticJsonDocument<500> doc;
+
+  doc["name"] = NAME;
+  doc["temp"] = getTempF();
+  handleOperatonMessage();
+  doc["operation"] = charBuf;
+  
+  serializeJson(doc, Serial); // this prints json doc for debug
+  Serial.println();
   serializeJson(doc, cbuff, buflen);
 
   webSocket.broadcastTXT(cbuff, strlen(cbuff));
@@ -165,12 +213,7 @@ bool shutOff(void *) {  // make timer api happy
   return (false);
 }
 
-
-
-// process the GET parameters sent from client
-void handleParameters() {
-  //   webPrint(webServer.args());
-  //   webPrint(" args<br>");
+void handleParameters() {  // process the GET parameters sent from client
 
   String message;
   // message what we got
@@ -184,7 +227,6 @@ void handleParameters() {
 
   char cBuf[200];
   message.toCharArray(cBuf, sizeof(cBuf));
-  // webPrint(cBuf);
 
   // set internal clock time
   int m;
@@ -197,7 +239,7 @@ void handleParameters() {
 
   if (webServer.hasArg("minute") ||  webServer.hasArg("hour") || webServer.hasArg("day")) {
     setTime(h, m, 0, d, 1, 2022); // set time, only care about minute hour and day
-    webPrint("<br>Time set: day %2d hour %2d minute %2d",day(),hour(),minute() );
+    webPrint("Time set: day %2d hour %2d minute %2d",day(),hour(),minute() );
   }
 
   // handle valve actuation from web client
@@ -226,26 +268,21 @@ void handleOperatonFeedback() { // embedded page that displays the recent operat
 
     Serial.print("ring buffer data available: ");
     Serial.println(buff.available());
+    
      // trim old debug data   
     while(buff.available() < 40) {
       buff.shift();
     }
-    // line up to first html break (<br>)
-   // while(buff.first() != char('<')) {
+    
+   // line up to first html break (<br>)
+   //while(buff[0] != '<') {
    //   buff.shift();
-   // }
-
-    int i = 0;
-//   while (!buff.isEmpty()) {
-//      charBuf[i++] = buff.shift();
-//   }
+   //}
 
   int qty = buff.size();
-  Serial.print("buffer size: ");
-  Serial.println(qty);  
+   
   // unload ring buffer contents
-  
-  for(i = 0; i < qty; i++) {
+   for(int i = 0; i < qty; i++) {
 
     charBuf[i] = buff.shift();
     buff.push(charBuf[i]);
@@ -317,13 +354,13 @@ int relay[4] = {16, 14, 12, 13};
 #define SATURDAY  7
 
 #define START1  RUN_MINUTE
-#define START2  START1 + DURATION1
-#define START3  START2 + DURATION2
-#define START4  START3 + DURATION3
-#define START5  START4 + DURATION4
-#define START6  START5 + DURATION5
-#define START7  START6 + DURATION6
-#define START8  START7 + DURATION7
+#define START2  START1 + runtime1
+#define START3  START2 + runtime2
+#define START4  START3 + runtime3
+#define START5  START4 + runtime4
+#define START6  START5 + runtime5
+#define START7  START6 + runtime6
+#define START8  START7 + runtime7
 
 #ifdef  RELAY8
 #define ON LOW
@@ -337,7 +374,7 @@ int relay[4] = {16, 14, 12, 13};
 void relayOn(int rl) {
   if (digitalRead(relay[rl]) == OFF ) {   // only turn ON  if it is currently OFF
 
-    webPrint("<br>Valve %1d on at %2d day %2d hour %2d minute", rl + 1, day(), hour(), minute());
+    webPrint("Valve %1d on at %2d:%2d", rl + 1, hour(), minute());
 
     int i;
     for (i = 0; i < sizeof relay / sizeof relay[0]; i++) { // make sure only one relay is on at a time
@@ -390,7 +427,7 @@ void controlRelays() {
       else if (minute() >= START7 && minute() < START8) {
         relayOn(6);
       }
-      else if (minute() >= START8 && minute() < START8 + DURATION8) {
+      else if (minute() >= START8 && minute() < START8 + runtime8) {
         relayOn(7);
       }
 #endif

@@ -12,17 +12,6 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <script type="text/javascript">
 
-        
-
-        function init() {
-		  document.getElementById("vcontrol").reset();  // clear old operations
-		  webSocket = new WebSocket('ws://' + window.location.hostname + ':81/');  // websocket indicates working connection
-          webSocket.onmessage = function(event) {
-               processReceivedCommand(event);
-	      }
-        }
- 
-    
         function httpGet(theUrl)
         {
             var xmlHttp = new XMLHttpRequest();
@@ -32,22 +21,33 @@
         
         function getTime() {
           // get a new date (locale machine date time)
-          var date = new Date();
+          var date = new Date();        
           var hr = date.getHours();
           var mn = date.getMinutes();
           var dy = date.getDate();
           var url ="/index.html?minute=" + mn + "&hour=" + hr + "&day=" + dy;
           return url;
         } 
-		
+       
+
+        function init() {
+		  document.getElementById("vcontrol").reset();  // clear old operations
+		  webSocket = new WebSocket('ws://' + window.location.hostname + ':81/');  // websocket indicates working connection
+          webSocket.onmessage = function(event) {
+               processReceivedCommand(event);
+	      }
+	      //httpGet(getTime());  // send browser time to server
+        }
+ 
+  		
          function fakeTime() {
           // fake the run time to force a run of all valves
-          var url ="/index.html?minute=" + 10 + "&hour=" + 7 + "&day=" + 3;
+          var url ="/index.html?minute=" + 10 + "&hour=" + 2 + "&day=" + 3;
           return url;
         } 
 		
 		function refreshScreen() {
-		  document.getElementById("vcontrol").reset();  // clear old operations
+		  document.getElementById("vcontrol").reset();  // clear old operations -- may not need this anymore
 		  document.getElementById("v1").checked = false
 		  document.getElementById("v2").checked = false
 		  document.getElementById("v3").checked = false		  
@@ -64,17 +64,21 @@
         function processReceivedCommand(evt) {
 		var data = JSON.parse(evt.data);
 		document.getElementById("name").innerHTML = data.name;
-		document.getElementById("temp").innerHTML = data.temp + ' deg F';       
+		document.getElementById("temp").innerHTML = data.temp + ' deg F';  
+		document.getElementById("operation").innerHTML = data.operation;      
+		 
 		// get a new date (locale machine date time)
         var date = new Date();
         // get the date as a string
-        var n = date.toDateString();
+        var day = date.toDateString();  
         // get the time as a string
         var time = date.toLocaleTimeString();
+        
+        
         // find the html element with the id of time
-        // set the innerHTML of that element to the date a space the time
-        document.getElementById("time").innerHTML = n + ' ' + time;
-			
+        // set the innerHTML of that element to the date-space-time
+        document.getElementById("time").innerHTML = day  + ' ' + time;
+	
 		var tempelem = document.getElementById("time");
 
 		if (blink) {    // blink something to show server is running
@@ -97,15 +101,15 @@
 <body onload="javascript:init()" onbeforeunload="return closesocket()">
 	 <div class="main_block flex-container" id="main_stuff">
 
-        <div class="time">
-           <h4><span class="timep-text" id="name" >???</span> </h4>
+        <div class="time" >
+           <h3><span class="timep-text" id="name" >???</span> </h3>
            <h4><span class="timep-text" id="temp" >???</span> </h4>
            <h4><span class="timep-text" id="time" >???</span> </h4>
            <button type="button" id="myBtn" onclick="httpGet(getTime())">Set Time</button> 
          </div>
         
         <div class="valve">
-            <h2>Valves</h2>
+            <h3>Valves</h3>
             <form action="/index.html"  method="get" id="vcontrol"> <!--post back to this same page-->
               <input type="radio" id="v1" name="sprinkler_valve" value="v1">
               <label for="v1">V1</label>  <br>
@@ -127,9 +131,10 @@
 		
 		
         <div  class="text_info">  <!--get operation results page from server-->
-           <h2>Operation</h2>
-		   <iframe id="op_info" src="/operation.html"  width="100%" height="200">   </iframe>
-		   <button type="button" id="refresh" onclick="refreshScreen()">Refresh Screen</button> 
+           <h3>Past Operations</h3>
+           <span class="timep-info" id="operation" >???</span> 
+		   <!--iframe id="op_info" src="/operation.html"  width="100%" height="200">   </iframe-->
+		   <!--button type="button" id="refresh" onclick="refreshScreen()">Refresh Screen</button--> 
         </div>
 
     </div>
