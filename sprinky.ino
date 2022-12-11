@@ -25,25 +25,16 @@
 #define RUN_HOUR 2       // hour to start running
 #define RUN_MINUTE 10    // minute to start running 
 
-//#define DURATION1 1      // how long to run staton 1, etc (winter)
-//#define DURATION2 2
-//#define DURATION3 2
-//#define DURATION4 4
-//#define DURATION5 2
-//#define DURATION6 4
-//#define DURATION7 1
-//#define DURATION8 1
-
-#define DURATION1 3      // how long to run staton 1, etc (summer)
-#define DURATION2 3
-#define DURATION3 4
-#define DURATION4 7
-#define DURATION5 5
-#define DURATION6 6
+#define DURATION1 1      // how long to run staton 1, etc (winter)
+#define DURATION2 2
+#define DURATION3 2
+#define DURATION4 4
+#define DURATION5 2
+#define DURATION6 4
 #define DURATION7 1
 #define DURATION8 1
 
-int runtime1 = DURATION1;
+int runtime1 = DURATION1;  // the runtimes will adjust by temperature
 int runtime2 = DURATION2;
 int runtime3 = DURATION3;
 int runtime4 = DURATION4;
@@ -54,7 +45,6 @@ int runtime8 = DURATION8;
 
 #define LED_ON LOW   // for working the built in LED
 #define LED_OFF HIGH
-
 
 #ifdef RELAY8
 #define BLINK_LED 10  // 10 is a dummy LED for the 8 relay board, it does nothing
@@ -120,7 +110,7 @@ void handleFile(const String& file, const String& contentType) // stream data fi
   f.close();
 }
 
-float getTempF() {
+int getTempF() {
   
 #ifdef RELAY8
   int sensorValue = 450;  // dummy value until we have hardware support.
@@ -128,7 +118,7 @@ float getTempF() {
   int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
 #endif 
   // map diode voltage to temperature F  ( diode mv values recorded from freezing and boiling water)
-  float tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v) 
+  int tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v) 
 
   return(tempF);
 }
@@ -169,8 +159,6 @@ void sendSocket() {
   handleOperatonMessage();
   doc["operation"] = charBuf;
   
-  serializeJson(doc, Serial); // this prints json doc for debug
-  Serial.println();
   serializeJson(doc, cbuff, buflen);
 
   webSocket.broadcastTXT(cbuff, strlen(cbuff));
@@ -260,67 +248,6 @@ void handleRoot()
   handleFile("/index.html", "text/html");
   if (webServer.args() > 0) handleParameters();
 }
-
-void handleOperatonFeedback() { // embedded page that displays the recent operations/ debug info
-
-  // read all of circular buffer into charBuff
-  // circular buffer contains recent debug print out
-
-    Serial.print("ring buffer data available: ");
-    Serial.println(buff.available());
-    
-     // trim old debug data   
-    while(buff.available() < 40) {
-      buff.shift();
-    }
-    
-   // line up to first html break (<br>)
-   //while(buff[0] != '<') {
-   //   buff.shift();
-   //}
-
-  int qty = buff.size();
-   
-  // unload ring buffer contents
-   for(int i = 0; i < qty; i++) {
-
-    charBuf[i] = buff.shift();
-    buff.push(charBuf[i]);
-  }
-
-  Serial.print("charBuf size: ");
-  Serial.println(strlen(charBuf));   
- 
-  //char temp[bufferSize + 200];
-  char temp[1000];
-  
-  // create web page out of charBuf contents
-  snprintf(temp, sizeof(temp),
-
-           "<html>\
-  <head>\
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
-    <meta http-equiv=\"Content-type\" content=\"text/html;charset=UTF-8\">\
-    <title>Feedback</title>\
-    <style>\
-      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; \
-      font-size: 14px; Color: #000088; }\
-    </style>\
-  </head>\
-  <body>\
-    <p>%s</p>\
-  </body>\
-</html>",
-
-           charBuf );
-
-  Serial.print("html string size: ");
-  Serial.println(strlen(temp));  
-  
-  webServer.send(200, "text/html", temp);
-  memset(charBuf, 0, sizeof(charBuf));   // clean up 
-}
-
 
 void handleStyle()
 {
@@ -436,6 +363,22 @@ void controlRelays() {
       }
     } else  allOff(); // not the run hour
   }
+  // measure temperature at noon to adjust watering times
+  if (hour() == 2 && minute() == 10) {
+    // expand watering time to 2x over a 40-110 degree temp range
+   int temperature_adjustment = map(getTempF(), 40, 110, 100, 200);
+   
+   //webPrint("Watering time increased by a factor of %2d percent", temperature_adjustment);
+   runtime1 = int((DURATION1 * temperature_adjustment) / 100);
+   runtime2 = int((DURATION2 * temperature_adjustment) / 100);
+   runtime3 = int((DURATION3 * temperature_adjustment) / 100);
+   runtime4 = int((DURATION4 * temperature_adjustment) / 100);
+   runtime5 = int((DURATION5 * temperature_adjustment) / 100);
+   runtime6 = int((DURATION6 * temperature_adjustment) / 100);
+   runtime7 = int((DURATION7 * temperature_adjustment) / 100);
+   runtime8 = int((DURATION8 * temperature_adjustment) / 100);
+  }
+  
 }
 
 // ********** SETP AND LOOP *****************
@@ -468,7 +411,7 @@ void setup() {
     return;
   }
   Serial.println("FS mounted");
-  webServer.on("/operation.html", handleOperatonFeedback);
+
   webServer.on("/style.css", handleStyle);
   webServer.on("/favicon.ico", handleFavicon);
   webServer.onNotFound(handleRoot); // needed to make auto sign in work
