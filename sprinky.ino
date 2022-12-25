@@ -1,7 +1,16 @@
 
+//#define ESP32
+#ifdef ESP32
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WebServer.h>
+#else
 #include <ESP8266WiFi.h>
-#include <DNSServer.h>
+#include <WiFiClient.h>
 #include <ESP8266WebServer.h>
+#endif
+
+#include <DNSServer.h>
 #include <LittleFS.h>
 #include <arduino-timer.h>
 #include <TimeLib.h>
