@@ -21,7 +21,7 @@
 #include <ArduinoJson.h>
 
 
-//#define RELAY8
+#define RELAY8
 
 #ifdef RELAY8
 #define NAME "sprinky8"
@@ -132,7 +132,7 @@ int getTempF() {
   return(tempF);
 }
 
-void handleOperatonMessage() { // embedded page that displays the recent operations/ debug info
+void handleOperatonMessage() { // displays the recent operations/ debug info
 
   // read all of circular buffer into charBuff
   // circular buffer contains recent debug print out
@@ -210,6 +210,8 @@ bool shutOff(void *) {  // make timer api happy
   return (false);
 }
 
+bool disable = false;  // flag to disable/enable watering
+
 void handleParameters() {  // process the GET parameters sent from client
 
   String message;
@@ -238,7 +240,20 @@ void handleParameters() {  // process the GET parameters sent from client
     setTime(h, m, 0, d, 1, 2022); // set time, only care about minute hour and day
     webPrint("Time set: day %2d hour %2d minute %2d",day(),hour(),minute() );
   }
+  
+ // handle enable watering
+  if (webServer.hasArg("onoff")) {
+     if (webServer.arg("onoff") == "disable") {
+       disable = true;
+       Serial.println("water off");
+       webPrint("water off");
+     }
 
+  } else {
+       disable = false;
+       Serial.println("water on");
+  }
+  
   // handle valve actuation from web client
   if (webServer.hasArg("sprinkler_valve")) {
     timer.in(60000, shutOff);  // turn off any manually activated valve after an minute
@@ -308,7 +323,7 @@ int relay[4] = {16, 14, 12, 13};
 
 // turn relay rl on, all others off
 void relayOn(int rl) {
-  if (digitalRead(relay[rl]) == OFF ) {   // only turn ON  if it is currently OFF
+  if (digitalRead(relay[rl]) == OFF && !disable) {   // only turn ON  if it is currently OFF
 
     webPrint("Valve %1d on at %2d:%2d", rl + 1, hour(), minute());
 
@@ -335,7 +350,7 @@ void relayConfig( ) {
 }
 
 void controlRelays() {
-  if (!manualOp) {  // if not being operated manually
+  if (!manualOp) {  // if not being operated manually or disabled
     //if (weekday() == FRIDAY ||  weekday() == TUESDAY || weekday() == THURSDAY) {
     if (hour() == RUN_HOUR) {
       if     (minute() < START1) {

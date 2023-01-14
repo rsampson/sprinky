@@ -79,7 +79,7 @@
         // set the innerHTML of that element to the date-space-time
         document.getElementById("time").innerHTML = day  + ' ' + time;
 	
-		var tempelem = document.getElementById("time");
+		var tempelem = document.getElementById("name");
 
 		if (blink) {    // blink something to show server is running
 			tempelem.style.color = "red";
@@ -123,10 +123,14 @@
               <label for="v5">V5</label><br>
               <input type="radio" id="v6" name="sprinkler_valve" value="v6">
               <label for="v6">V6</label><br><br>
+              <input type="checkbox" id="disable" name="onoff"  value="disable">
+              <label for="disable">disable</label><br><br>
               <input type="submit" value="Activate">
             </form> 
             <br> 
-            <button type="button" id="testBtn" onclick="httpGet(fakeTime())">Test All</button>          
+            <button type="button" id="testBtn" onclick="httpGet(fakeTime())">Test All</button>  
+            <br>
+                    
         </div>
 		
 		
