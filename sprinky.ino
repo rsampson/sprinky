@@ -21,7 +21,7 @@
 #include <ArduinoJson.h>
 
 
-#define RELAY8
+//#define RELAY8
 
 #ifdef RELAY8
 #define NAME "sprinky8"
@@ -34,23 +34,17 @@
 #define RUN_HOUR 2       // hour to start running
 #define RUN_MINUTE 10    // minute to start running 
 
-#define DURATION1 1      // how long to run staton 1, etc (winter)
-#define DURATION2 2
-#define DURATION3 2
-#define DURATION4 4
-#define DURATION5 2
-#define DURATION6 4
-#define DURATION7 1
-#define DURATION8 1
+// all watering durations are in milliseconds
+#define MS_PER_MIN 60000
 
-int runtime1 = DURATION1;  // the runtimes will adjust by temperature
-int runtime2 = DURATION2;
-int runtime3 = DURATION3;
-int runtime4 = DURATION4;
-int runtime5 = DURATION5;
-int runtime6 = DURATION6;
-int runtime7 = DURATION7;
-int runtime8 = DURATION8;
+#define DURATION1 1  * MS_PER_MIN    // how long to run staton 1, etc (winter)
+#define DURATION2 2  * MS_PER_MIN
+#define DURATION3 2  * MS_PER_MIN
+#define DURATION4 4  * MS_PER_MIN
+#define DURATION5 2  * MS_PER_MIN
+#define DURATION6 4  * MS_PER_MIN
+#define DURATION7 1  * MS_PER_MIN
+#define DURATION8 1  * MS_PER_MIN
 
 #define LED_ON LOW   // for working the built in LED
 #define LED_OFF HIGH
@@ -224,20 +218,22 @@ void handleParameters() {  // process the GET parameters sent from client
   }
   Serial.println(message);
 
-  char cBuf[200];
-  message.toCharArray(cBuf, sizeof(cBuf));
+//  char cBuf[200];
+//  message.toCharArray(cBuf, sizeof(cBuf));
 
   // set internal clock time
+  int s;
   int m;
   int h;
   int d;
 
-  if (webServer.hasArg("minute")) m = webServer.arg("minute").toInt();
-  if (webServer.hasArg("hour"))   h = webServer.arg("hour").toInt();
-  if (webServer.hasArg("day"))    d = webServer.arg("day").toInt();
-
   if (webServer.hasArg("minute") ||  webServer.hasArg("hour") || webServer.hasArg("day")) {
-    setTime(h, m, 0, d, 1, 2022); // set time, only care about minute hour and day
+    if (webServer.hasArg("second")) s = webServer.arg("second").toInt();
+    if (webServer.hasArg("minute")) m = webServer.arg("minute").toInt();
+    if (webServer.hasArg("hour"))   h = webServer.arg("hour").toInt();
+    if (webServer.hasArg("day"))    d = webServer.arg("day").toInt();
+    
+    setTime(h, m, s, d, 1, 2022); // set time, only care about second minute hour and day
     webPrint("Time set: day %2d hour %2d minute %2d",day(),hour(),minute() );
   }
   
@@ -245,6 +241,7 @@ void handleParameters() {  // process the GET parameters sent from client
   if (webServer.hasArg("onoff")) {
      if (webServer.arg("onoff") == "disable") {
        disable = true;
+       allOff();
        Serial.println("water off");
        webPrint("water off");
      }
@@ -295,24 +292,6 @@ int relay[4] = {16, 14, 12, 13};
 #endif
 
 
-// do not modify these definitions
-#define SUNDAY    1
-#define MONDAY    2
-#define TUESDAY   3
-#define WEDNESDAY 4
-#define THURSDAY  5
-#define FRIDAY    6
-#define SATURDAY  7
-
-#define START1  RUN_MINUTE
-#define START2  START1 + runtime1
-#define START3  START2 + runtime2
-#define START4  START3 + runtime3
-#define START5  START4 + runtime4
-#define START6  START5 + runtime5
-#define START7  START6 + runtime6
-#define START8  START7 + runtime7
-
 #ifdef  RELAY8
 #define ON LOW
 #define OFF HIGH
@@ -321,19 +300,6 @@ int relay[4] = {16, 14, 12, 13};
 #define OFF LOW
 #endif
 
-// turn relay rl on, all others off
-void relayOn(int rl) {
-  if (digitalRead(relay[rl]) == OFF && !disable) {   // only turn ON  if it is currently OFF
-
-    webPrint("Valve %1d on at %2d:%2d", rl + 1, hour(), minute());
-
-    int i;
-    for (i = 0; i < sizeof relay / sizeof relay[0]; i++) { // make sure only one relay is on at a time
-      digitalWrite(relay[i], i == rl ? ON : OFF);
-    }
-
-  }
-}
 
 void allOff() {
   int i;
@@ -349,60 +315,85 @@ void relayConfig( ) {
   }
 }
 
+
+unsigned long runtime[8] = {DURATION1, DURATION2, DURATION3, DURATION4,
+                            DURATION5, DURATION6, DURATION7, DURATION8};
+                            
+unsigned long current_time_ms = 0;
+
+#define START1  current_time_ms
+#define START2  START1 + runtime[0]
+#define START3  START2 + runtime[1]
+#define START4  START3 + runtime[2]
+#define START5  START4 + runtime[3]
+#define START6  START5 + runtime[4]
+#define START7  START6 + runtime[5]
+#define START8  START7 + runtime[6]
+
+// turn relay rl on, all others off
+void relayOn(int rl) {
+  if (digitalRead(relay[rl]) == OFF && !disable) {   // only turn ON  if it is currently OFF
+
+    webPrint("Valve %1d day %2d @ %2d:%2d for %3d sec", rl + 1, day(), hour(), minute(), runtime[rl] / 1000 );
+
+    int i;
+    for (i = 0; i < sizeof relay / sizeof relay[0]; i++) { // make sure only one relay is on at a time
+      digitalWrite(relay[i], i == rl ? ON : OFF);
+    }
+    Serial.println(current_time_ms);
+    for (i = 0; i < 4; i++) { // print runtimes
+       Serial.println(runtime[i]);
+    }
+  }
+}
+                            
+// do not modify these definitions
+#define SUNDAY    1
+#define MONDAY    2
+#define TUESDAY   3
+#define WEDNESDAY 4
+#define THURSDAY  5
+#define FRIDAY    6
+#define SATURDAY  7
+
 void controlRelays() {
-  if (!manualOp) {  // if not being operated manually or disabled
+  if (!manualOp) {  // if not being operated manually
     //if (weekday() == FRIDAY ||  weekday() == TUESDAY || weekday() == THURSDAY) {
     if (hour() == RUN_HOUR) {
-      if     (minute() < START1) {
+      if     (minute() < RUN_MINUTE) {
         allOff();  // it's to soon in the hour
+        current_time_ms = millis();
       }
-      if     (minute() >= START1 && minute() < START2) {
-        relayOn(0);
-      }
-      else if (minute() >= START2 && minute() < START3) {
-        relayOn(1);
-      }
-      else if (minute() >= START3 && minute() < START4) {
-        relayOn(2);
-      }
-      else if (minute() >= START4 && minute() < START5) {
-        relayOn(3);
-      }
+      else if (millis() > START1 && millis() < START2) relayOn(0);
+      else if (millis() > START2 && millis() < START3) relayOn(1);
+      else if (millis() > START3 && millis() < START4) relayOn(2);
+      else if (millis() > START4 && millis() < START5) relayOn(3);
 #ifdef RELAY8
-      else if (minute() >= START5 && minute() < START6) {
-        relayOn(4);
-      }
-      else if (minute() >= START6 && minute() < START7) {
-        relayOn(5);
-      }
-      else if (minute() >= START7 && minute() < START8) {
-        relayOn(6);
-      }
-      else if (minute() >= START8 && minute() < START8 + runtime8) {
-        relayOn(7);
-      }
-#endif
-      else {
-        allOff();  // not the run minute
-      }
-    } else  allOff(); // not the run hour
-  }
-  // measure temperature at noon to adjust watering times
-  if (hour() == 2 && minute() == 10) {
+      else if (millis() > START5 && millis() < START6) relayOn(4);
+      else if (millis() > START6 && millis() < START7) relayOn(5);
+      else if (millis() > START7 && millis() < START8) relayOn(6);
+      else if (millis() > START8 && millis() < START8 + runtime8) relayOn(7);
+#endif      
+      else allOff();
+     }  // skip to here if not run hour
+    }  // skip to here if manual
+
+  // measure temperature at 2 o'clock noon to adjust watering times
+  if (hour() == 14 && minute() == 10 && second() == 2) {
     // expand watering time to 2x over a 40-110 degree temp range
-   int temperature_adjustment = map(getTempF(), 40, 110, 100, 200);
+   unsigned long temperature_adjustment = map(getTempF(), 40, 110, 100, 200);
    
-   //webPrint("Watering time increased by a factor of %2d percent", temperature_adjustment);
-   runtime1 = int((DURATION1 * temperature_adjustment) / 100);
-   runtime2 = int((DURATION2 * temperature_adjustment) / 100);
-   runtime3 = int((DURATION3 * temperature_adjustment) / 100);
-   runtime4 = int((DURATION4 * temperature_adjustment) / 100);
-   runtime5 = int((DURATION5 * temperature_adjustment) / 100);
-   runtime6 = int((DURATION6 * temperature_adjustment) / 100);
-   runtime7 = int((DURATION7 * temperature_adjustment) / 100);
-   runtime8 = int((DURATION8 * temperature_adjustment) / 100);
+   webPrint("Watering increased %2d percent", temperature_adjustment);
+   runtime[0] = (DURATION1 * temperature_adjustment) / 100;
+   runtime[1] = (DURATION2 * temperature_adjustment) / 100;
+   runtime[2] = (DURATION3 * temperature_adjustment) / 100;
+   runtime[3] = (DURATION4 * temperature_adjustment) / 100;
+   runtime[4] = (DURATION5 * temperature_adjustment) / 100;
+   runtime[5] = (DURATION6 * temperature_adjustment) / 100;
+   runtime[6] = (DURATION7 * temperature_adjustment) / 100;
+   runtime[7] = (DURATION8 * temperature_adjustment) / 100;
   }
-  
+
 }
 
 // ********** SETP AND LOOP *****************
@@ -461,7 +452,7 @@ void loop() {
   dnsServer.processNextRequest(); // captive portal support
   ArduinoOTA.handle();
   timer.tick();      // valve run & shut off
-  timer_led.tick();  // blink led "heart beat"
+  timer_led.tick();  // blink led "heart beat", operate relays and send socket
   Watchdog.reset();
   webSocket.loop();
 }
