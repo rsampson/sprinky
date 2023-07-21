@@ -1,5 +1,5 @@
 
-//#define ESP32
+#define ESP32
 #ifdef ESP32
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -20,14 +20,26 @@
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 
-
-//#define RELAY8
+#define RELAY8
 
 #ifdef RELAY8
-#define NAME "sprinky8"
+#define DS18B20
+#define NAME "sprinkyESP"
+//#define NAME "sprinky8"
 #else
 #define NAME "sprinky4"
 #endif
+
+
+#ifdef DS18B20
+// sensor libraries
+#include <OneWire.h>
+#include <DallasTemperature.h>
+OneWire oneWire(21);  // sensor hooked to gpio21
+DallasTemperature sensors(&oneWire);
+#endif
+
+
 
 //  ********** Set watering schedule here **********
 
@@ -50,7 +62,8 @@
 #define LED_OFF HIGH
 
 #ifdef RELAY8
-#define BLINK_LED 10  // 10 is a dummy LED for the 8 relay board, it does nothing
+// #define BLINK_LED 10  // 10 is a dummy LED for the 8 relay board, it does nothing
+#define BLINK_LED 23 
 #else
 #define BLINK_LED 5
 #endif
@@ -66,7 +79,7 @@ char charBuf[bufferSize];
 CircularBuffer<char, (bufferSize - 40)> buff;
   
 // write string into circular buffer for later printout on browser
-void webPrint(char * format, ...)
+void webPrint(const char* format, ...)
 {
   char buffer[256];
   
@@ -92,7 +105,12 @@ void webPrint(char * format, ...)
 // Captive portal code from: https://github.com/esp8266/Arduino/blob/master/libraries/DNSServer/examples/CaptivePortal/CaptivePortal.ino
 const byte DNS_PORT = 53;
 DNSServer dnsServer;
+#ifdef ESP32
+WebServer webServer(80);
+#else
 ESP8266WebServer webServer(80);
+#endif
+
 WebSocketsServer webSocket = WebSocketsServer(81);
 
 void handleFile(const String& file, const String& contentType) // stream data files to browser
@@ -114,14 +132,18 @@ void handleFile(const String& file, const String& contentType) // stream data fi
 }
 
 int getTempF() {
-  
-#ifdef RELAY8
-  int sensorValue = 450;  // dummy value until we have hardware support.
-#else
-  int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
-#endif 
-  // map diode voltage to temperature F  ( diode mv values recorded from freezing and boiling water)
-  int tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v) 
+
+  int tempF;
+#ifdef DS18B20
+   sensors.requestTemperatures(); // Send the command to get temperatures
+   tempF = sensors.getTempFByIndex(0);
+#else 
+   int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
+    // map diode voltage to temperature F  ( diode mv values recorded from freezing and boiling water)
+    // int tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
+    // Wemos mini devides by  .3125
+    tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k / 5v) 
+#endif
 
   return(tempF);
 }
@@ -286,12 +308,16 @@ void handleFavicon()
 //  http://wiki.sunfounder.cc/index.php?title=8_Channel_5V_Relay_Module&utm_source=thenewstack&utm_medium=website
 
 #ifdef  RELAY8     // if using a board with 8 relays
-int relay[8] = {16, 5, 4, 0, 2, 14, 12, 13}; // this is the output gpio pin ordering
+//int relay[8] = {16, 5, 4, 0, 2, 14, 12, 13}; // this is the output gpio pin ordering
+// esp 32 relay ---- GPIO32, GPIO33, GPIO25, GPIO26, GPIO27, GPIO14, GPIO12 and GPIO13
+int relay[8] = {32, 33, 25, 26, 27, 14, 12, 13};
+#define ON HIGH
+#define OFF LOW
 #else              // else using board with 4 relays
 int relay[4] = {16, 14, 12, 13};
 #endif
 
-
+/*
 #ifdef  RELAY8
 #define ON LOW
 #define OFF HIGH
@@ -299,7 +325,7 @@ int relay[4] = {16, 14, 12, 13};
 #define ON HIGH
 #define OFF LOW
 #endif
-
+*/
 
 void allOff() {
   int i;
@@ -371,8 +397,8 @@ void controlRelays() {
 #ifdef RELAY8
       else if (millis() > START5 && millis() < START6) relayOn(4);
       else if (millis() > START6 && millis() < START7) relayOn(5);
-      else if (millis() > START7 && millis() < START8) relayOn(6);
-      else if (millis() > START8 && millis() < START8 + runtime8) relayOn(7);
+//      else if (millis() > START7 && millis() < START8) relayOn(6);
+//      else if (millis() > START8 && millis() < START8 + runtime[7]) relayOn(7);
 #endif      
       else allOff();
      }  // skip to here if not run hour
@@ -413,6 +439,11 @@ void setup() {
   Serial.println();
   Serial.println("started");
 
+#ifdef DS18B20
+  sensors.begin();
+  Serial.println("sensor configured");
+#endif
+  
   WiFi.softAP(NAME);
 
   Serial.println("connected");
