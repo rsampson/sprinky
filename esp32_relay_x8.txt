@@ -1,0 +1,23 @@
+The Board
+The microcontroller is an ESP32 Wroom and can be programmed with the Arduino IDE. I use the settings of the "Wemos Lolin32" for the upload.
+
+8 relays are connected to GPIOs. The outputs are HIGH active. The relays are connected to GPIO32, GPIO33, GPIO25, GPIO26, GPIO27, GPIO14, GPIO12 and GPIO13. None of the relays will go high on startup. All relays have a red indicator LED. Additionally there is a red LED connected to GPIO 23 (HIGH active). There are push buttons for EN (reset) and GPIO0 (flash).
+
+Most (all?) GPIOs of the ESP32 are available via headers. The double row headers are delivered with the board but you need to solder them.
+
+A single side header can be used to get access to RX/TX/IO01 - it will be used to program the ESP32.
+
+The  board can be supplied with DC 5V or DC7-28V. A step down converter LM2596S regulates the voltage to 5 V, and an AMS1117-3 is used to generate the 3.3V for the ESP32. When all 8 relays are active, the board draws in idle (with all relays off)  0,17A@ 12V  and around 0.43A with all relays on.
+
+The board has cutouts between the relay pins, nevertheless don't use these relays with mains electrics/230V.
+The dimensions of the board are 150 * 80 * 19mm.
+
+ESP32 Relay 6 12F Relay X8 Wifi Board
+
+The Standard Software of the Relay Board
+My ESP32 relay X8 board came programmed with a test sketch. It activates all 8 relays in a sequence from left to right including the additional LED on GPIO23. No Wifi was seen during the demo sketch running.
+
+How to program the Relay Board
+The board can be programmed when you connect a USB-TTL to the respective header pins. RX/TX/GND and power are available on the single row header. To bring the ESP32 in flash mode I compile the sketch in the Arduino IDE and wait for the running dots:
+
+

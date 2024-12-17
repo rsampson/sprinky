@@ -1,5 +1,5 @@
-
-#define ESP32
+ 
+#define ESP32  //use Wemos Lolin32
 #ifdef ESP32
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -16,7 +16,7 @@
 #include <TimeLib.h>
 #include <ArduinoOTA.h>
 #include <CircularBuffer.h> // https://github.com/rlogiacco/CircularBuffer
-#include <Adafruit_SleepyDog.h>  // watchdog
+//#include <Adafruit_SleepyDog.h>  // watchdog
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 
@@ -24,7 +24,7 @@
 
 #ifdef RELAY8
 #define DS18B20
-#define NAME "sprinkyESP"
+#define NAME "sprinky1"
 //#define NAME "sprinky8"
 #else
 #define NAME "sprinky4"
@@ -63,7 +63,7 @@ DallasTemperature sensors(&oneWire);
 
 #ifdef RELAY8
 // #define BLINK_LED 10  // 10 is a dummy LED for the 8 relay board, it does nothing
-#define BLINK_LED 23 
+#define BLINK_LED 23
 #else
 #define BLINK_LED 5
 #endif
@@ -76,27 +76,27 @@ const size_t bufferSize = 400;
 char charBuf[bufferSize];
 
 // Create a circular buffer for debug output on web page
-CircularBuffer<char, (bufferSize - 40)> buff;
-  
+CircularBuffer < char, (bufferSize - 40) > buff;
+
 // write string into circular buffer for later printout on browser
 void webPrint(const char* format, ...)
 {
   char buffer[256];
-  
+
   va_list args;
   va_start (args, format);
   vsprintf (buffer, format, args);
   Serial.println(buffer);
   // prepend an html break
   buff.push('<');
-  buff.push('b');  
+  buff.push('b');
   buff.push('r');
   buff.push('>');
   // put formated string into circular buffer
   for (int i = 0; i < strlen(buffer); i++)
-    {
-     buff.push(buffer[i]);
-    }
+  {
+    buff.push(buffer[i]);
+  }
   va_end (args);
 }
 
@@ -121,12 +121,12 @@ void handleFile(const String& file, const String& contentType) // stream data fi
     webServer.send(200, "text/plain", "error sending " + file);
   } else {
     int file_size = f.size();
-   //webServer.sendHeader("Content-Length", (String)(file_size));
+    //webServer.sendHeader("Content-Length", (String)(file_size));
     size_t size_returned = webServer.streamFile(f, contentType);
-//    if ( size_returned != file_size) {
-//      Serial.println("Sent less data than expected for " + file);
-//      Serial.println("sent " + String(size_returned) + " expected " + String(file_size));
-//    }
+    //    if ( size_returned != file_size) {
+    //      Serial.println("Sent less data than expected for " + file);
+    //      Serial.println("sent " + String(size_returned) + " expected " + String(file_size));
+    //    }
   }
   f.close();
 }
@@ -135,17 +135,17 @@ int getTempF() {
 
   int tempF;
 #ifdef DS18B20
-   sensors.requestTemperatures(); // Send the command to get temperatures
-   tempF = sensors.getTempFByIndex(0);
-#else 
-   int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
-    // map diode voltage to temperature F  ( diode mv values recorded from freezing and boiling water)
-    // int tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
-    // Wemos mini devides by  .3125
-    tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k / 5v) 
+  sensors.requestTemperatures(); // Send the command to get temperatures
+  tempF = sensors.getTempFByIndex(0);
+#else
+  int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
+  // map diode voltage to temperature F  ( diode mv values recorded from freezing and boiling water)
+  // int tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
+  // Wemos mini devides by  .3125
+  tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
 #endif
 
-  return(tempF);
+  return (tempF);
 }
 
 void handleOperatonMessage() { // displays the recent operations/ debug info
@@ -153,25 +153,25 @@ void handleOperatonMessage() { // displays the recent operations/ debug info
   // read all of circular buffer into charBuff
   // circular buffer contains recent debug print out
 
-     // trim old debug data   
-    while(buff.available() < 40) {
-      buff.shift();
-    }
-    
-   // line up to first html break (<br>)
-   //while(buff[0] != '<') {
-   //   buff.shift();
-   //}
+  // trim old debug data
+  while (buff.available() < 40) {
+    buff.shift();
+  }
+
+  // line up to first html break (<br>)
+  //while(buff[0] != '<') {
+  //   buff.shift();
+  //}
 
   int qty = buff.size();
-  int i = 0; 
+  int i = 0;
   // unload ring buffer contents
-   for(i = 0; i < qty; i++) {
+  for (i = 0; i < qty; i++) {
 
     charBuf[i] = buff.shift();
     buff.push(charBuf[i]);
   }
-   charBuf[i + 1] = 0; //terminate string
+  charBuf[i + 1] = 0; //terminate string
 }
 
 void sendSocket() {
@@ -183,7 +183,7 @@ void sendSocket() {
   doc["temp"] = getTempF();
   handleOperatonMessage();
   doc["operation"] = charBuf;
-  
+
   serializeJson(doc, cbuff, buflen);
 
   webSocket.broadcastTXT(cbuff, strlen(cbuff));
@@ -240,8 +240,8 @@ void handleParameters() {  // process the GET parameters sent from client
   }
   Serial.println(message);
 
-//  char cBuf[200];
-//  message.toCharArray(cBuf, sizeof(cBuf));
+  //  char cBuf[200];
+  //  message.toCharArray(cBuf, sizeof(cBuf));
 
   // set internal clock time
   int s;
@@ -254,25 +254,25 @@ void handleParameters() {  // process the GET parameters sent from client
     if (webServer.hasArg("minute")) m = webServer.arg("minute").toInt();
     if (webServer.hasArg("hour"))   h = webServer.arg("hour").toInt();
     if (webServer.hasArg("day"))    d = webServer.arg("day").toInt();
-    
-    setTime(h, m, s, d, 1, 2022); // set time, only care about second minute hour and day
-    webPrint("Time set: day %2d hour %2d minute %2d",day(),hour(),minute() );
+
+    setTime(h, m, s, d, 1, 2023); // set time, only care about second minute hour and day
+    webPrint("Time set: day %2d hour %2d minute %2d", day(), hour(), minute() );
   }
-  
- // handle enable watering
+
+  // handle enable watering
   if (webServer.hasArg("onoff")) {
-     if (webServer.arg("onoff") == "disable") {
-       disable = true;
-       allOff();
-       Serial.println("water off");
-       webPrint("water off");
-     }
+    if (webServer.arg("onoff") == "disable") {
+      disable = true;
+      allOff();
+      Serial.println("water off");
+      webPrint("water off");
+    }
 
   } else {
-       disable = false;
-       Serial.println("water on");
+    disable = false;
+    Serial.println("water on");
   }
-  
+
   // handle valve actuation from web client
   if (webServer.hasArg("sprinkler_valve")) {
     timer.in(60000, shutOff);  // turn off any manually activated valve after an minute
@@ -315,17 +315,9 @@ int relay[8] = {32, 33, 25, 26, 27, 14, 12, 13};
 #define OFF LOW
 #else              // else using board with 4 relays
 int relay[4] = {16, 14, 12, 13};
-#endif
-
-/*
-#ifdef  RELAY8
-#define ON LOW
-#define OFF HIGH
-#else
 #define ON HIGH
 #define OFF LOW
 #endif
-*/
 
 void allOff() {
   int i;
@@ -343,8 +335,9 @@ void relayConfig( ) {
 
 
 unsigned long runtime[8] = {DURATION1, DURATION2, DURATION3, DURATION4,
-                            DURATION5, DURATION6, DURATION7, DURATION8};
-                            
+                            DURATION5, DURATION6, DURATION7, DURATION8
+                           };
+
 unsigned long current_time_ms = 0;
 
 #define START1  current_time_ms
@@ -368,11 +361,11 @@ void relayOn(int rl) {
     }
     Serial.println(current_time_ms);
     for (i = 0; i < 4; i++) { // print runtimes
-       Serial.println(runtime[i]);
+      Serial.println(runtime[i]);
     }
   }
 }
-                            
+
 // do not modify these definitions
 #define SUNDAY    1
 #define MONDAY    2
@@ -397,41 +390,41 @@ void controlRelays() {
 #ifdef RELAY8
       else if (millis() > START5 && millis() < START6) relayOn(4);
       else if (millis() > START6 && millis() < START7) relayOn(5);
-//      else if (millis() > START7 && millis() < START8) relayOn(6);
-//      else if (millis() > START8 && millis() < START8 + runtime[7]) relayOn(7);
-#endif      
+      //      else if (millis() > START7 && millis() < START8) relayOn(6);
+      //      else if (millis() > START8 && millis() < START8 + runtime[7]) relayOn(7);
+#endif
       else allOff();
-     }  // skip to here if not run hour
-    }  // skip to here if manual
+    }  // skip to here if not run hour
+  }  // skip to here if manual
 
   // measure temperature at 2 o'clock noon to adjust watering times
   if (hour() == 14 && minute() == 10 && second() == 2) {
     // expand watering time to 2x over a 40-110 degree temp range
-   unsigned long temperature_adjustment = map(getTempF(), 40, 110, 100, 200);
-   
-   webPrint("Watering increased %2d percent", temperature_adjustment);
-   runtime[0] = (DURATION1 * temperature_adjustment) / 100;
-   runtime[1] = (DURATION2 * temperature_adjustment) / 100;
-   runtime[2] = (DURATION3 * temperature_adjustment) / 100;
-   runtime[3] = (DURATION4 * temperature_adjustment) / 100;
-   runtime[4] = (DURATION5 * temperature_adjustment) / 100;
-   runtime[5] = (DURATION6 * temperature_adjustment) / 100;
-   runtime[6] = (DURATION7 * temperature_adjustment) / 100;
-   runtime[7] = (DURATION8 * temperature_adjustment) / 100;
+    unsigned long temperature_adjustment = map(getTempF(), 40, 110, 100, 200);
+
+    webPrint("Watering increased %2d percent", temperature_adjustment);
+    runtime[0] = (DURATION1 * temperature_adjustment) / 100;
+    runtime[1] = (DURATION2 * temperature_adjustment) / 100;
+    runtime[2] = (DURATION3 * temperature_adjustment) / 100;
+    runtime[3] = (DURATION4 * temperature_adjustment) / 100;
+    runtime[4] = (DURATION5 * temperature_adjustment) / 100;
+    runtime[5] = (DURATION6 * temperature_adjustment) / 100;
+    runtime[6] = (DURATION7 * temperature_adjustment) / 100;
+    runtime[7] = (DURATION8 * temperature_adjustment) / 100;
   }
 
 }
 
+
 // ********** SETP AND LOOP *****************
 void setup() {
-   
+
   relayConfig();
   allOff();
   
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LED_OFF);
   pinMode(BLINK_LED, OUTPUT); // set LED pin to OUTPUT
-
+  digitalWrite(BLINK_LED, LED_OFF);
+  
   Serial.begin(115200);
   while (!Serial) {
     ;  // wait for Serial port to connect. Needed for native USB port only
@@ -443,7 +436,28 @@ void setup() {
   sensors.begin();
   Serial.println("sensor configured");
 #endif
-  
+
+/*
+ //For testing with direct connection to router
+ const char* ssid = "offline";
+ const char* password = "2LiveCrew"; 
+ 
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.println("");
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+*/
+
   WiFi.softAP(NAME);
 
   Serial.println("connected");
@@ -466,24 +480,29 @@ void setup() {
   webSocket.onEvent(webSocketEvent);
   webSocket.begin();
 
-  ArduinoOTA.setHostname(NAME);
-  ArduinoOTA.begin();
-
-  int countdownMS = Watchdog.enable(1000);
+  // must be at least 30 seconds or OTA will fail
+  //int countdownMS = Watchdog.enable(30000);
 
   // call the toggle_led function every 1000 millis (1 second)
   timer_led.every(1000, toggle_led);
+
+  ArduinoOTA.setHostname(NAME);
+  ArduinoOTA.begin();
 
   Serial.println("Starting server");
 }
 
 
 void loop() {
+  ArduinoOTA.handle();
+
   webServer.handleClient();
   dnsServer.processNextRequest(); // captive portal support
-  ArduinoOTA.handle();
-  timer.tick();      // valve run & shut off
   timer_led.tick();  // blink led "heart beat", operate relays and send socket
-  Watchdog.reset();
+  timer.tick();      // valve run & shut off
+
+ // Watchdog.reset();
+
   webSocket.loop();
+
 }
