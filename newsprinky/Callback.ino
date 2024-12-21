@@ -31,9 +31,6 @@ void SaveWifiDetailsCallback(Control *sender, int type) {
 
     preferences.putString("ssid", stored_ssid);
     preferences.putString("pass", stored_pass);
- 
-//    Serial.println(stored_ssid);
-//    Serial.println(stored_pass);
   }
 }
 //WiFi settings callback=====================================================
@@ -106,3 +103,11 @@ void paramCallback(Control* sender, int type, int param)
 void textCallback(Control *sender, int type) {
   //This callback is needed to handle the changed values, even though it doesn't do anything itself.
 }
+
+//ESP Reset=================================
+void ESPReset(Control *sender, int type) {
+  if (type == B_UP) {
+    ESP.restart();
+  }
+}
+//ESP Reset=================================

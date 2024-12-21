@@ -1,11 +1,11 @@
 /**
- * Adapted from the brilliant ESPUI written by:
- * @author Ian Gray @iangray1000
+ * Adapted from the brilliant ESPUI written by: Lukas Bachschwell
+ * and a demo by Ian Gray @iangray1000
  *
  * When this program boots, it will load an SSID and password from nvmem.
  * If these credentials do not work for some reason, the ESP will create an Access
  * Point wifi with the SSID HOSTNAME (defined below). You can then connect and use
- * the controls on the "Wifi Credentials" tab to store credentials into the EEPROM.
+ * the controls on the "Wifi Credentials" tab to store credentials into the nvmem.
  *
  */
 
@@ -44,11 +44,12 @@ Preferences preferences;
 #include <arduino-timer.h>
 auto timer = timer_create_default(); // create a timer for auto shut down of valves
 #include <TimeLib.h>
-//#include <ArduinoOTA.h>
+#include <ElegantOTA.h>
+
 
 //Settings
 #define SLOW_BOOT 0
-#define HOSTNAME "sprinky"
+#define HOSTNAME "sprinky1"
 #define FORCE_USE_HOTSPOT 0
 
 //Function Prototypes
@@ -66,10 +67,8 @@ void slideCallback(Control *sender, int type);
 
 //ESPUI=================================================================================================================
 #include <ESPUI.h>
-
 String stored_ssid, stored_pass, stored_hour, stored_minute;
 //UI handles
-// uint16_t statusLabelId, serialLabelId;
 uint16_t wifi_ssid_text, wifi_pass_text;
 uint16_t tempLabel, debugLabel, timeLabel, mainSwitcher, mainText, mainNumber, mainTime;
 uint16_t hourNumber, minuteNumber;
@@ -79,16 +78,14 @@ uint16_t slideID2, slideID3, slideID4, slideID5, slideID6;
 // Input values
 uint16_t runHour = 2;        // hour to start running
 uint16_t runMinute = 10;     // minute to start running 
-uint16_t slide1, slide2, slide3, slide4, slide5, slide6 ; // valve on durations
 //ESPUI==================================================================================================================
-
 
 const size_t bufferSize = 400; // debug buffer
 char charBuf[bufferSize];
 bool manualOp = false; // manual operations (valve test) flag
 unsigned long runtime[8]; // valve on times in seconds
 
-// This is the main function which builds our GUI
+// ******************This is the main function which builds our GUI*******************
 void setUpUI() {
 
 #ifdef ESP8266
@@ -105,23 +102,21 @@ void setUpUI() {
 	 * Tab: Basic Controls
 	 * This tab contains all the basic ESPUI controls, and shows how to read and update them at runtime.
 	 *-----------------------------------------------------------------------------------------------------------*/
-	auto maintab = ESPUI.addControl(Tab, "", "System Controls");
-  ESPUI.addControl(Separator, "status", "", None, maintab);
-  //ESPUI.separator("status");
-	debugLabel = ESPUI.addControl(Label, "Debug", "some message", Wetasphalt, maintab, generalCallback);
+	auto maintab = ESPUI.addControl(Tab, "", "System Status");
   timeLabel = ESPUI.addControl(Label, "Current Time", "12:00", Wetasphalt, maintab, generalCallback);
 	tempLabel = ESPUI.addControl(Label, "Outside Temperature", "70 degrees F", Wetasphalt, maintab, generalCallback);
   
-  ESPUI.addControl(Separator, "controls", "", None, maintab);
+  //ESPUI.addControl(Separator, "controls", "", None, maintab);
   mainSwitcher = ESPUI.addControl(Switcher, "Watering Disable", "", Wetasphalt, maintab, generalCallback);
-
+  debugLabel = ESPUI.addControl(Label, "Debug", "some message", Wetasphalt, maintab, generalCallback);
+  
 	//These are the values for the selector's options. (Note that they *must* be declared static
 	//so that the storage is allocated in global memory and not just on the stack of this function.)
-	static String optionValues[] {"Winter", "Spring", "Summer", "Fall"};
-	auto mainselector = ESPUI.addControl(Select, "Set Season Timing Defaults", "Set Defaults", Wetasphalt, maintab, generalCallback);
-	for(auto const& v : optionValues) {
-		ESPUI.addControl(Option, v.c_str(), v, None, mainselector);
-	}
+//	static String optionValues[] {"Winter", "Spring", "Summer", "Fall"};
+//	auto mainselector = ESPUI.addControl(Select, "Set Season Timing Defaults", "Set Defaults", Wetasphalt, maintab, generalCallback);
+//	for(auto const& v : optionValues) {
+//		ESPUI.addControl(Option, v.c_str(), v, None, mainselector);
+//	}
 
 	mainTime = ESPUI.addControl(Time, "", "", None, 0,
     [](Control *sender, int type) {
@@ -142,7 +137,7 @@ void setUpUI() {
 	 * Tab: Valve controls
 	 *-----------------------------------------------------------------------------------------------------------*/
 	auto grouptab = ESPUI.addControl(Tab, "", "Valve Controls");
-  ESPUI.addControl(Separator, "valve control", "", None, grouptab);
+  ESPUI.addControl(Separator, "Valve Diagnostics (open valve for two minutes)", "", None, grouptab);
 	//The parent of this button is a tab, so it will create a new panel with one control.
 	auto groupbutton = ESPUI.addControl(Button, "Test Valve", "valve 1", Wetasphalt, grouptab, valveButtonCallback);
 	//However the parent of this button is another control, so therefore no new panel is
@@ -167,7 +162,7 @@ void setUpUI() {
   //Sliders can be grouped as well 
 	//To label each slider in the group, we are going add additional labels and give them custom CSS styles
 	//We need this CSS style rule, which will remove the label's background and ensure that it takes up the entire width of the panel
-	String clearLabelStyle = "background-color: unset; width: 75%;";
+	String clearLabelStyle = "background-color: unset; width: 100%;";
 	//First we add the main slider to create a panel
 	groupsliders = ESPUI.addControl(Slider, "Run Time (in seconds)", "600", Wetasphalt, grouptab, slideCallback);
 	//Then we add a label and set its style to the clearLabelStyle. Here we've just given it the name "A"
@@ -226,34 +221,15 @@ void setUpUI() {
 	ESPUI.addControl(Max, "", "32", None, wifi_ssid_text);
 	wifi_pass_text = ESPUI.addControl(Text, "Password", "", Wetasphalt, wifitab, textCallback);
 	ESPUI.addControl(Max, "", "64", None, wifi_pass_text);
-	ESPUI.addControl(Button, "Save", "Save", Wetasphalt, wifitab, SaveWifiDetailsCallback
- 
-//	    [](Control *sender, int type) {
-//			if(type == B_UP) {
-//				Serial.println("Saving credentials to EPROM...");
-//				Serial.println(ESPUI.getControl(wifi_ssid_text)->value);
-//				Serial.println(ESPUI.getControl(wifi_pass_text)->value);
-//
-//        
-//				unsigned int i;
-//				EEPROM.begin(100);
-//				for(i = 0; i < ESPUI.getControl(wifi_ssid_text)->value.length(); i++) {
-//					EEPROM.write(i, ESPUI.getControl(wifi_ssid_text)->value.charAt(i));
-//					if(i==30) break; //Even though we provided a max length, user input should never be trusted
-//				}
-//				EEPROM.write(i, '\0');
-//
-//				for(i = 0; i < ESPUI.getControl(wifi_pass_text)->value.length(); i++) {
-//					EEPROM.write(i + 32, ESPUI.getControl(wifi_pass_text)->value.charAt(i));
-//					if(i==94) break; //Even though we provided a max length, user input should never be trusted
-//				}
-//				EEPROM.write(i + 32, '\0');
-//				EEPROM.end();
-//			}
-//	    }
-
-);
-
+	ESPUI.addControl(Button, "Save", "Save", Wetasphalt, wifitab, SaveWifiDetailsCallback);
+  /*
+   * Tab:System Maintenance
+   * You use this tab to upload new code OTA, see ElegantOTA library doc
+   *-----------------------------------------------------------------------------------------------------------*/
+   auto maintenancetab = ESPUI.addControl(Tab, "", "System Maintenance");
+   auto updateButton =   ESPUI.addControl(Label, "Code Update", "<a href=\"/update\"> <button>Update</button></a>", Wetasphalt, maintenancetab, generalCallback); 
+   ESPUI.addControl(Button, "", "Reboot",  Wetasphalt,  updateButton, ESPReset);
+   
 	//Finally, start up the UI.
 	//This should only be called once we are connected to WiFi.
 	ESPUI.begin("Garden Watering System");
@@ -264,7 +240,7 @@ void setUpUI() {
 
 }
 
-// temperature measuring stuff
+// temperature measuring stuff ********************************************
 #define DS18B20
 #ifdef DS18B20
 // sensor libraries
@@ -292,6 +268,7 @@ int getTempF() {
 #endif
   return (tempF);
 }
+// temp stuff ***************************************************************
 
 
 #define LED_ON LOW   // for working the built in LED
@@ -331,25 +308,35 @@ void setup() {
 	  connectWifi();
  
 	  setUpUI();
-    stored_hour = preferences.getString("hour", "2");
-    stored_minute = preferences.getString("minute", "0");
+    runHour = (stored_hour = preferences.getString("hour", "2")).toInt();
+    runMinute= (stored_minute = preferences.getString("minute", "0")).toInt();
     ESPUI.updateNumber(hourNumber, stored_hour.toInt());
     ESPUI.updateNumber(minuteNumber, stored_minute.toInt());   
   }
     
   timeClient.begin();
   timeClient.setTimeOffset(-28800); // UTC to pacific standard time
-  
+  timeClient.update();      // run ntp time client   
+  // set time, only care about second minute hour and day 
+  setTime(timeClient.getHours(),timeClient.getMinutes(), timeClient.getSeconds(), timeClient.getDay(), 1, 2025);     
+  webPrint( "Up at: %2d:%2d \n", hour(), minute());
+
+   // *********how to add an extended web page**********
+   ESPUI.WebServer()->on("/narf", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/html", "<A HREF = \"http://www.google.com/\">Google Search Engine</A>");
+  });
+
+  ElegantOTA.begin(ESPUI.WebServer());    // Start ElegantOTA
+
   Serial.println("We Are Go!");
 }
 
 void loop() {
+  ElegantOTA.loop();
 	static long unsigned halfSecondTimer = 0;
   static long unsigned twoSecondTimer = 0;
   
 	if(millis() > halfSecondTimer + 500) {
-   
-		ESPUI.updateLabel(tempLabel, String( getTempF()) + " deg F");
     
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // toggle the LED
     
@@ -360,39 +347,37 @@ void loop() {
 
   // update debug information
   if(millis() > twoSecondTimer + 2000) {
+    
     fetchDebugText();
     String debugString = (char*)charBuf;
-    
     ESPUI.updateLabel(debugLabel, debugString);
-    ESPUI.updateTime(mainTime);
     
-    setTime(timeClient.getHours(),timeClient.getMinutes(), timeClient.getSeconds(), timeClient.getDay(), 1, 2025); // set time, only care about second minute hour and day    
-//    webPrint( "Current Time: %2d:%2d \n", hour(), minute());
-//    webPrint( "Run Time: %2d:%2d \n", runHour, runMinute);
+    ESPUI.updateTime(mainTime);
+    ESPUI.updateLabel(tempLabel, String( getTempF()) + " deg F");
     
     twoSecondTimer = millis();
   }
   
 
 	//Simple debug UART interface
-	if(Serial.available()) {
-		switch(Serial.read()) {
-			case 'w': //Print IP details
-				Serial.println(WiFi.localIP());
-				break;
-			case 'W': //Reconnect wifi
-				connectWifi();
-				break;
-			case 'C': //Force a crash (for testing exception decoder)
-				#if !defined(ESP32)
-					((void (*)())0xf00fdead)();
-				#endif
-				break;
-			default:
-				Serial.print('#');
-				break;
-		}
-	}
+//	if(Serial.available()) {
+//		switch(Serial.read()) {
+//			case 'w': //Print IP details
+//				Serial.println(WiFi.localIP());
+//				break;
+//			case 'W': //Reconnect wifi
+//				connectWifi();
+//				break;
+//			case 'C': //Force a crash (for testing exception decoder)
+//				#if !defined(ESP32)
+//					((void (*)())0xf00fdead)();
+//				#endif
+//				break;
+//			default:
+//				Serial.print('#');
+//				break;
+//		}
+//	}
 
   timeClient.update();      // run ntp time client  
   timer.tick();             // tick the timer (to shut down valve tests after two minutes)
@@ -403,18 +388,6 @@ void loop() {
 	#endif
 
 }
-
-
-//Utilities
-//------------------------------------------------------------------------------------------------
-//void readStringFromEEPROM(String& buf, int baseaddress, int size) {
-//	buf.reserve(size);
-//	for (int i = baseaddress; i < baseaddress+size; i++) {
-//		char c = EEPROM.read(i);
-//		buf += c;
-//		if(!c) break;
-//	}
-//}
 
 void connectWifi() {
 	int connect_timeout;
@@ -429,15 +402,9 @@ void connectWifi() {
 	//Load credentials from EEPROM
 	if(!(FORCE_USE_HOTSPOT)) {
 		yield();
-    //******************************************************
+ 
     stored_ssid = preferences.getString("ssid", "SSID");
     stored_pass = preferences.getString("pass", "PASSWORD");
-    //*******************************************************
-//		EEPROM.begin(100);
-//		String stored_ssid, stored_pass;
-//		readStringFromEEPROM(stored_ssid, 0, 32);
-//		readStringFromEEPROM(stored_pass, 32, 96);
-//		EEPROM.end();
 
 		//Try to connect with stored credentials, fire up an access point if they don't work.
      Serial.println("Connecting to : " + stored_ssid);
@@ -456,7 +423,11 @@ void connectWifi() {
 	}
 
 	if (WiFi.status() == WL_CONNECTED) {
-		Serial.println(WiFi.localIP());
+		Serial.println(WiFi.localIP());     // print out ip address
+    char IP[] = "xxx.xxx.xxx.xxx";         
+    IPAddress ip = WiFi.localIP();
+    ip.toString().toCharArray(IP, 16);
+    webPrint("IP address = %s \n", IP);   
 		Serial.println("Wifi started");
 
 		if (!MDNS.begin(HOSTNAME)) {

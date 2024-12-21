@@ -1,16 +1,4 @@
 
-// all watering durations are in milliseconds
-//#define MS_PER_MIN 60000
-//
-//#define DURATION1 1  * MS_PER_MIN    // how long to run staton 1, etc (winter)
-//#define DURATION2 2  * MS_PER_MIN
-//#define DURATION3 2  * MS_PER_MIN
-//#define DURATION4 4  * MS_PER_MIN
-//#define DURATION5 2  * MS_PER_MIN
-//#define DURATION6 4  * MS_PER_MIN
-//#define DURATION7 1  * MS_PER_MIN
-//#define DURATION8 1  * MS_PER_MIN
-
 // ********** RELAY STUFF *****************
 //  8 Relay board info can be found at:
 //  https://www.amazon.com/Channel-Module-Supply-Stable-Development/dp/B0C4PGB5V1
@@ -36,7 +24,6 @@ int relay[4] = {16, 14, 12, 13};
 
 bool disable = false;  // flag to disable/enable watering
 
-
 void allOff() {
   int i;
   for (i = 0; i < sizeof relay / sizeof relay[0]; i++) {
@@ -60,10 +47,6 @@ void relayConfig( ) {
 }
 
 
-//unsigned long runtime[8] = {DURATION1, DURATION2, DURATION3, DURATION4,
-//                            DURATION5, DURATION6, DURATION7, DURATION8
-//                           };
-//
 unsigned long current_time_ms = 0;
 
 #define START1  current_time_ms
@@ -98,10 +81,12 @@ void relayOn(int rl) {
 #define SATURDAY  7
 
 void controlRelays() {
+  time_t t = now(); // Store the current time atomically
+ 
   if (!manualOp) {  // if not being operated manually
-    //if (weekday() == FRIDAY ||  weekday() == TUESDAY || weekday() == THURSDAY) {
-    if (hour() == runHour) {
-      if (minute() < runMinute) {
+    //if (weekday(t) == FRIDAY ||  weekday(t) == TUESDAY || weekday(t) == THURSDAY) {
+    if (hour(t) == runHour) {
+      if (minute(t) < runMinute) {
         allOff();  // it's to soon in the hour
         current_time_ms = millis();
       }
@@ -115,12 +100,14 @@ void controlRelays() {
       //      else if (millis() > START7 && millis() < START8) relayOn(6);
       //      else if (millis() > START8 && millis() < START8 + runtime[7]) relayOn(7);
 #endif
-      else allOff();
+      else { 
+        allOff();
+      }
     }  // skip to here if not run hour
   }  // skip to here if manual
 
   // measure temperature at 2 o'clock noon to adjust watering times
-//  if (hour() == 14 && minute() == 10 && second() == 2) {
+//  if (hour(t) == 14 && minute(t) == 10 && second() == 2) {
 //    // expand watering time to 2x over a 40-110 degree temp range
 //    unsigned long temperature_adjustment = map(getTempF(), 40, 110, 100, 200);
 //
