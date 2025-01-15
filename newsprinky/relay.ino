@@ -22,8 +22,6 @@ int relay[4] = {16, 14, 12, 13};
 #endif
 
 
-bool disable = false;  // flag to disable/enable watering
-
 void allOff() {
   int i;
   for (i = 0; i < sizeof relay / sizeof relay[0]; i++) {
@@ -46,7 +44,6 @@ void relayConfig( ) {
   }
 }
 
-
 unsigned long current_time_ms = 0;
 
 #define START1  current_time_ms
@@ -60,9 +57,9 @@ unsigned long current_time_ms = 0;
 
 // turn relay rl on, all others off
 void relayOn(int rl) {
-  if (digitalRead(relay[rl]) == OFF && !disable) {   // only turn ON  if it is currently OFF
+  if (digitalRead(relay[rl]) == OFF && !disable) {   // only turn ON  if it is currently OFF and not disabled
 
-    webPrint("Valve %1d day %2d @ %2d:%2d for %3d sec \n", rl + 1, day(), hour(), minute(), runtime[rl] );
+    webPrint("Valve %1d on %s @ %2d:%2d for %3d sec \n", rl + 1,  Days[weekday()], hour(), minute(), runtime[rl] );
 
     int i;
     for (i = 0; i < sizeof relay / sizeof relay[0]; i++) { // make sure only one relay is on at a time
@@ -84,10 +81,9 @@ void controlRelays() {
   time_t t = now(); // Store the current time atomically
  
   if (!manualOp) {  // if not being operated manually
-    //if (weekday(t) == FRIDAY ||  weekday(t) == TUESDAY || weekday(t) == THURSDAY) {
     if (hour(t) == runHour) {
       if (minute(t) < runMinute) {
-        allOff();  // it's to soon in the hour
+        allOff();  // it's to soon in the hour !!!!!! fix reboot during the hour
         current_time_ms = millis();
       }
       else if (millis() > START1 && millis() < START2) relayOn(0);
@@ -97,8 +93,8 @@ void controlRelays() {
 #ifdef RELAY8
       else if (millis() > START5 && millis() < START6) relayOn(4);
       else if (millis() > START6 && millis() < START7) relayOn(5);
-      //      else if (millis() > START7 && millis() < START8) relayOn(6);
-      //      else if (millis() > START8 && millis() < START8 + runtime[7]) relayOn(7);
+      else if (millis() > START7 && millis() < START8) relayOn(6);
+      else if (millis() > START8 && millis() < START8 + runtime[7]) relayOn(7);
 #endif
       else { 
         allOff();
