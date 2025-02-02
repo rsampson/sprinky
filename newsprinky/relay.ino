@@ -5,117 +5,136 @@
 //  https://www.aliexpress.us/item/3256805488891875.html?gatewayAdapt=glo2usa4itemAdapt
 //  https://devices.esphome.io/devices/ESP32E-Relay-X8
 //  https://www.reddit.com/r/esp32/comments/1czys44/unable_to_program_esp32wroom32e_relay_board/
+// for 4 relay board: // https://xpart.org/how-to-use-the-dc-12v-esp8266-wifi-4-channel-relay-module-for-remote-control/
+#define ON HIGH
+#define OFF LOW
 
-#define RELAY8
 #ifdef  RELAY8     // if using a board with 8 relays
-//int relay[8] = {16, 5, 4, 0, 2, 14, 12, 13}; // this is the output gpio pin ordering
 // esp 32 relay ---- GPIO32, GPIO33, GPIO25, GPIO26, GPIO27, GPIO14, GPIO12 and GPIO13
 int relay[8] = {32, 33, 25, 26, 27, 14, 12, 13};
-#define ON HIGH
-#define OFF LOW
 #else              // else using board with 4 relays, data at:
-
-// https://xpart.org/how-to-use-the-dc-12v-esp8266-wifi-4-channel-relay-module-for-remote-control/
 int relay[4] = {16, 14, 12, 13};
-#define ON HIGH
-#define OFF LOW
 #endif
 
+//#define SUNDAY    1
+//#define MONDAY    2
+//#define TUESDAY   3
+//#define WEDNESDAY 4
+//#define THURSDAY  5
+//#define FRIDAY    6
+//#define SATURDAY  7
 
-void allOff() {
-  int i;
-  for (i = 0; i < sizeof relay / sizeof relay[0]; i++) {
-    digitalWrite(relay[i], OFF);
-  }
-}
+#define NUM_RELAYS (sizeof(relay) / sizeof(relay[0])
 
-bool shutOff(void *) {  // make timer api happy
-  allOff();
-  timer.cancel();
-  manualOp = false;
-  Serial.println("timer shut off ");
-  return (false);
-}
-
-void relayConfig( ) {
-  int i;
-  for (i = 0; i < sizeof relay / sizeof relay[0]; i++) {
+void relayConfig() {
+  for (int i = 0; i < NUM_RELAYS); i++) {
     pinMode(relay[i], OUTPUT);
   }
 }
 
-unsigned long current_time_ms = 0;
+void allOff() {
+  for (int i = 0; i < NUM_RELAYS); i++) {
+    digitalWrite(relay[i], OFF);
+  }
+}
 
-#define START1  current_time_ms
-#define START2  (START1 + runtime[0] * 1000)
-#define START3  (START2 + runtime[1] * 1000)
-#define START4  (START3 + runtime[2] * 1000)
-#define START5  (START4 + runtime[3] * 1000)
-#define START6  (START5 + runtime[4] * 1000)
-#define START7  (START6 + runtime[5] * 1000)
-#define START8  (START7 + runtime[6] * 1000)
+bool shutOff(void*) {  // bool return and void* makes timer api happy
+  allOff();
+  timer.cancel();
+  Serial.println("timer shut off ");
+  return (false);
+}
 
 // turn relay rl on, all others off
 void relayOn(int rl) {
-  if (digitalRead(relay[rl]) == OFF && !disable) {   // only turn ON  if it is currently OFF and not disabled
+  
+//  if (digitalRead(rl) == OFF) { // only print if off
+//     webPrint("Valve %1d on %s @ %s \n", rl + 1,  Days[weekday()], timeClient.getFormattedTime());
+//  }
+  
+  for (int i = 0; i < NUM_RELAYS); i++)     { // make sure only one relay is on at a time
+    digitalWrite(relay[i], i == rl ? ON : OFF);
+  }
+}
 
-    webPrint("Valve %1d on %s @ %2d:%2d for %3d sec \n", rl + 1,  Days[weekday()], hour(), minute(), runtime[rl] );
+uint32_t start_time_ms = 0;
+uint32_t temp_adjust = 1000; // scaled ms in second
+// runtimes are in seconds, start times are in ms
+// temp_adjust has the sec to ms conversion factored in (temp adjust is in ms)
+#define START1  start_time_ms
+#define START2  (START1 + runtime[0] * temp_adjust)
+#define START3  (START2 + runtime[1] * temp_adjust)
+#define START4  (START3 + runtime[2] * temp_adjust)
+#define START5  (START4 + runtime[3] * temp_adjust)
+#define START6  (START5 + runtime[4] * temp_adjust)
+#define START7  (START6 + runtime[5] * temp_adjust)
+#define START8  (START7 + runtime[6] * temp_adjust)
+#define START9  (START8 + runtime[7] * temp_adjust)
 
-    int i;
-    for (i = 0; i < sizeof relay / sizeof relay[0]; i++) { // make sure only one relay is on at a time
-      digitalWrite(relay[i], i == rl ? ON : OFF);
+
+float avg_temp = 70.0;
+bool runCycle = false;
+
+void controlRelays() {
+
+  if (!disable) {  // if not disabled
+    time_t t = now(); // Store the current time atomically
+    if (hour(t) == runHour && minute(t) == runMinute && second(t) == 0 && runCycle == false) {  // trigger start of cycle
+      allOff();
+      timer.cancel(); // cancel any manual operations
+      start_time_ms = millis();
+      runCycle = true;
+    }
+
+    if (runCycle == true) {      // run watering cycle if is time
+      if      (millis() >= START1 && millis() < START2) relayOn(0);
+      else if (millis() >= START2 && millis() < START3) relayOn(1);
+      else if (millis() >= START3 && millis() < START4) relayOn(2);
+      else if (millis() >= START4 && millis() < START5) relayOn(3);
+#ifdef RELAY8
+      else if (millis() >= START5 && millis() < START6) relayOn(4);
+      else if (millis() >= START6 && millis() < START7) relayOn(5);
+      else if (millis() >= START7 && millis() < START8) relayOn(6);
+      else if (millis() >= START8 && millis() < START9) relayOn(7);
+#endif
+      else {         // terminate cycle
+        allOff();
+        // print statistics
+        ESPUI.updateLabel(runtimeLabel, String((now() - t) / 60000) + " minutes");
+        webPrint("Average 24 hour temperature is %3.1f \n", avg_temp);
+        webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
+        runCycle = false;
+      }
     }
   }
 }
 
-// do not modify these definitions
-#define SUNDAY    1
-#define MONDAY    2
-#define TUESDAY   3
-#define WEDNESDAY 4
-#define THURSDAY  5
-#define FRIDAY    6
-#define SATURDAY  7
+bool haveRun = false;
 
-void controlRelays() {
+// compute an adjustment to run time based on average temperature
+void tempAdjRunTime(void) {
+  
   time_t t = now(); // Store the current time atomically
- 
-  if (!manualOp) {  // if not being operated manually
-    if (hour(t) == runHour) {
-      if (minute(t) < runMinute) {
-        allOff();  // it's to soon in the hour !!!!!! fix reboot during the hour
-        current_time_ms = millis();
-      }
-      else if (millis() > START1 && millis() < START2) relayOn(0);
-      else if (millis() > START2 && millis() < START3) relayOn(1);
-      else if (millis() > START3 && millis() < START4) relayOn(2);
-      else if (millis() > START4 && millis() < START5) relayOn(3);
-#ifdef RELAY8
-      else if (millis() > START5 && millis() < START6) relayOn(4);
-      else if (millis() > START6 && millis() < START7) relayOn(5);
-      else if (millis() > START7 && millis() < START8) relayOn(6);
-      else if (millis() > START8 && millis() < START8 + runtime[7]) relayOn(7);
-#endif
-      else { 
-        allOff();
-      }
-    }  // skip to here if not run hour
-  }  // skip to here if manual
+  if (minute(t) == 0 && second(t) == 0 && haveRun == false) { // do once each hour
+    //if (  second(t) == 0 && haveRun == false) { // do once each minute
+    haveRun = true;
+    
+    // samples temp and computes the average of the last 24 hours
+    dayBuffer.push(getTempF());
+    // the following ensures using the right type for the index variable
+    using index_t = decltype(dayBuffer)::index_t;
+    avg_temp = 0.0;
+    
+    for (index_t i = 0; i < dayBuffer.size(); i++) {
+      avg_temp += dayBuffer[i] / (float)dayBuffer.size();
+    }
+    
+    ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: " + String(avg_temp));
+    // expand watering time 0 to 2x over a 35-110 degree temp range
+    // map it into milli seconds
+    temp_adjust = map((int32_t)avg_temp, 35, 110, 1, 2000);
 
-  // measure temperature at 2 o'clock noon to adjust watering times
-//  if (hour(t) == 14 && minute(t) == 10 && second() == 2) {
-//    // expand watering time to 2x over a 40-110 degree temp range
-//    unsigned long temperature_adjustment = map(getTempF(), 40, 110, 100, 200);
-//
-//    webPrint("Watering increased %2d percent", temperature_adjustment);
-//    runtime[0] = (DURATION1 * temperature_adjustment) / 100;
-//    runtime[1] = (DURATION2 * temperature_adjustment) / 100;
-//    runtime[2] = (DURATION3 * temperature_adjustment) / 100;
-//    runtime[3] = (DURATION4 * temperature_adjustment) / 100;
-//    runtime[4] = (DURATION5 * temperature_adjustment) / 100;
-//    runtime[5] = (DURATION6 * temperature_adjustment) / 100;
-//    runtime[6] = (DURATION7 * temperature_adjustment) / 100;
-//    runtime[7] = (DURATION8 * temperature_adjustment) / 100;
-//  }
-
+  }
+  if (minute(t) == 0 && second(t) >= 1) haveRun = false;  // clear for run next hour
+  //if ( second(t) == 1) haveRun = false;  // clear for run next hour
 }

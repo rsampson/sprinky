@@ -1,5 +1,5 @@
 /**
- * Adapted from the brilliant ESPUI written by: Lukas Bachschwell
+ * GUI adapted from the brilliant ESPUI written by: Lukas Bachschwell
  * and a demo by Ian Gray @iangray1000
  *
  * When this program boots, it will load an SSID and password from nvmem.
@@ -9,14 +9,29 @@
  *
  */
 
+ // ToDo:  display total daily, monthly watering run time. Create valve labels. Link separate controllers. Show boot reason, add run sequence button.
+
+// Tested on ESP32 WROOM 32  and ESP12-F (esp8266)
+
 #include <Arduino.h>
 #include <ESPUI.h>
+
+#ifndef LED_BUILTIN
+#define LED_BUILTIN 2
 
 #if defined(ESP32)
 #include <WiFi.h>
 #include <ESPmDNS.h>
+#define TEMP_PIN 21
+#endif
+#define RELAY8
 #else
+
 // esp8266
+#define DEBUG true //set to true for debug output, false for no debug output
+#define Serial if(DEBUG)Serial
+#define TEMP_PIN D1
+//#define RELAY8  // some esp8266 boards may have 8 relays
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <umm_malloc/umm_heap_select.h>
@@ -44,10 +59,11 @@ Preferences preferences;
 auto timer = timer_create_default(); // create a timer for auto shut down of valves
 #include <TimeLib.h>
 #include <ElegantOTA.h>
-
+#include <CircularBuffer.hpp> // https://github.com/rlogiacco/CircularBuffer
+CircularBuffer<int, 24> dayBuffer;  // store 24 hour temp samples
 
 //Settings
-#define HOSTNAME "sprinkyTest"
+#define HOSTNAME "testsprinky"
 
 //Function Prototypes
 void connectWifi();
@@ -61,13 +77,19 @@ void SaveWifiDetailsCallback(Control *sender, int type);
 void SaveSheduleCallback(Control *sender, int type);
 void paramCallback(Control* sender, int type, int param);
 void slideCallback(Control *sender, int type);
+void tempAdjRunTime(void);
 
 //ESPUI=================================================================================================================
 #include <ESPUI.h>
 String stored_ssid, stored_pass, stored_hour, stored_minute;
 //UI handles
 uint16_t wifi_ssid_text, wifi_pass_text;
-uint16_t tempLabel, debugLabel, timeLabel, mainSwitcher, mainText, mainNumber, mainTime;
+uint16_t tempLabel, debugLabel, timeLabel, signalLabel,  bootLabel; 
+uint16_t groupbutton, button2Label, button3Label, button4Label, button5Label, button6Label, button7Label, button8Label;
+#define button1Label groupbutton
+uint16_t valve1Label, valve2Label, valve3Label, valve4Label, valve5Label, valve6Label, valve7Label, valve8Label;
+uint16_t slide1Label, slide2Label, slide3Label, slide4Label, slide5Label, slide6Label, slide7Label, slide8Label;
+uint16_t aveTempLabel, runtimeLabel, mainSwitcher, mainText, mainTime;
 uint16_t hourNumber, minuteNumber;
 uint16_t groupsliders;
 #define slideID1 groupsliders
@@ -80,177 +102,8 @@ uint16_t runMinute = 10;     // minute to start running
 const size_t bufferSize = 400; // debug buffer
 char charBuf[bufferSize];
 
-bool manualOp = false; // manual operations (valve test) flag
 bool disable = false;  // flag to disable/enable watering
 unsigned long runtime[8]; // valve on times in seconds
-
-// ******************This is the main function which builds our GUI*******************
-void setUpUI() {
-
-#ifdef ESP8266
-    { HeapSelectIram doAllocationsInIRAM;
-#endif
-
-	//Turn off verbose debugging
-	ESPUI.setVerbosity(Verbosity::Quiet);
-
-	//Make sliders continually report their position as they are being dragged.
-	ESPUI.sliderContinuous = true;
-
-	/*
-	 * Tab: Basic Controls
-	 * This tab contains all the basic ESPUI controls, and shows how to read and update them at runtime.
-	 *-----------------------------------------------------------------------------------------------------------*/
-	auto maintab = ESPUI.addControl(Tab, "", "System Status");
-  timeLabel = ESPUI.addControl(Label, "Current Time", "12:00", Wetasphalt, maintab, generalCallback);
-	tempLabel = ESPUI.addControl(Label, "Outside Temperature", "70 degrees F", Wetasphalt, maintab, generalCallback);
-  
-  mainSwitcher = ESPUI.addControl(Switcher, "Watering Disable", "0", Wetasphalt, maintab, switchCallback);
-  disable = preferences.getBool("disable", "0");
-  ESPUI.updateSwitcher(mainSwitcher, disable);
-  
-  debugLabel = ESPUI.addControl(Label, "Debug", "some message", Wetasphalt, maintab, generalCallback);
- 
- 	mainTime = ESPUI.addControl(Time, "", "", None, 0,
-    [](Control *sender, int type) {
-      if(type == TM_VALUE) { 
-        ESPUI.updateLabel(timeLabel, timeClient.getFormattedTime());
-      }
-    });
-
-//	ESPUI.addControl(Button, "Time Update", "Get Time", Wetasphalt, maintab,
-//		[](Control *sender, int type) {
-//			if(type == B_UP) {
-//				ESPUI.updateTime(mainTime);
-//			}
-//		});
-
-	/*
-	 * Tab: Valve controls
-	 *-----------------------------------------------------------------------------------------------------------*/
-	auto grouptab = ESPUI.addControl(Tab, "", "Valve Controls");
-  ESPUI.addControl(Separator, "Valve Diagnostics (open valve for two minutes)", "", None, grouptab);
-	//The parent of this button is a tab, so it will create a new panel with one control.
-	auto groupbutton = ESPUI.addControl(Button, "Test Valve", "valve 1", Wetasphalt, grouptab, valveButtonCallback);
-	//However the parent of this button is another control, so therefore no new panel is
-	//created and the button is added to the existing panel.
-	ESPUI.addControl(Button, "", "valve 2", Wetasphalt, groupbutton, valveButtonCallback);
-	ESPUI.addControl(Button, "", "valve 3", Wetasphalt, groupbutton, valveButtonCallback);
-	ESPUI.addControl(Button, "", "valve 4", Wetasphalt, groupbutton, valveButtonCallback);
-	ESPUI.addControl(Button, "", "valve 5", Wetasphalt, groupbutton, valveButtonCallback);
-	ESPUI.addControl(Button, "", "valve 6", Wetasphalt, groupbutton, valveButtonCallback);
-  ESPUI.addControl(Button, "", "valve 7", Wetasphalt, groupbutton, valveButtonCallback);
-  ESPUI.addControl(Button, "", "valve 8", Wetasphalt, groupbutton, valveButtonCallback);
-	
-  ESPUI.addControl(Separator, "Run Time Settings", "", None, grouptab);
-
-  //Number inputs also accept Min and Max components, but you should still validate the values.
-  hourNumber = ESPUI.addControl(Number, "Run Hour", "12", Wetasphalt, grouptab, hourCallback);
-  ESPUI.addControl(Min, "", "0", None, hourNumber);
-  ESPUI.addControl(Max, "", "23", None, hourNumber);
-  //Number inputs also accept Min and Max components, but you should still validate the values.
-  minuteNumber = ESPUI.addControl(Number, "Run Minute", "0", Wetasphalt, grouptab, minuteCallback);
-  ESPUI.addControl(Min, "", "0", None, minuteNumber);
-  ESPUI.addControl(Max, "", "60", None, minuteNumber); 
-
-  ESPUI.addControl(Button, "Save Schedule", "Save", Wetasphalt, grouptab, SaveScheduleCallback);
-  
-  //Sliders can be grouped as well 
-	//To label each slider in the group, we are going add additional labels and give them custom CSS styles
-	//We need this CSS style rule, which will remove the label's background and ensure that it takes up the entire width of the panel
-	String clearLabelStyle = "background-color: unset; width: 100%;";
-	//First we add the main slider to create a panel
-	groupsliders = ESPUI.addControl(Slider, "Run Time (in seconds)", "600", Wetasphalt, grouptab, slideCallback);
-	//Then we add a label and set its style to the clearLabelStyle. Here we've just given it the name "A"
-	ESPUI.setElementStyle(ESPUI.addControl(Label, "", "valve 1", None, groupsliders), clearLabelStyle);
-  ESPUI.addControl(Min, "", "1", None, groupsliders);
-  ESPUI.addControl(Max, "", "600", None, groupsliders);
-  
-	//We can now continue to add additional sliders and labels
-	slideID2 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
-	ESPUI.setElementStyle(ESPUI.addControl(Label, "", "valve 2", None, groupsliders), clearLabelStyle);
-	ESPUI.addControl(Min, "", "1", None, slideID2);
-  ESPUI.addControl(Max, "", "600", None, slideID2);
-  
-	slideID3 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
-	ESPUI.setElementStyle(ESPUI.addControl(Label, "", "valve 3", None, groupsliders), clearLabelStyle);
-	ESPUI.addControl(Min, "", "1", None, slideID3);
-  ESPUI.addControl(Max, "", "600", None, slideID3);
-  
-	slideID4 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
-	ESPUI.setElementStyle(ESPUI.addControl(Label, "", "valve 4", None, groupsliders), clearLabelStyle);
-	ESPUI.addControl(Min, "", "1", None, slideID4);
-  ESPUI.addControl(Max, "", "600", None, slideID4);
-  
-	slideID5 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
-	ESPUI.setElementStyle(ESPUI.addControl(Label, "", "valve 5", None, groupsliders), clearLabelStyle);
-	ESPUI.addControl(Min, "", "1", None, slideID5);
-  ESPUI.addControl(Max, "", "600", None, slideID5);
-  
-	slideID6 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
-	ESPUI.setElementStyle(ESPUI.addControl(Label, "", "valve 6", None, groupsliders), clearLabelStyle);
-  ESPUI.addControl(Min, "", "1", None, slideID6);
-  ESPUI.addControl(Max, "", "600", None, slideID6);
-
-  slideID7 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
-  ESPUI.setElementStyle(ESPUI.addControl(Label, "", "valve 7", None, groupsliders), clearLabelStyle);
-  ESPUI.addControl(Min, "", "1", None, slideID7);
-  ESPUI.addControl(Max, "", "600", None, slideID7);
-  
-  slideID8 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
-  ESPUI.setElementStyle(ESPUI.addControl(Label, "", "valve 8", None, groupsliders), clearLabelStyle);
-  ESPUI.addControl(Min, "", "1", None, slideID8);
-  ESPUI.addControl(Max, "", "600", None, slideID8);
-
-  
-  // retrieve settings and initialize sliders
-  runtime[0] = preferences.getString("slide1", "300").toInt(); 
-  runtime[1] = preferences.getString("slide2", "300").toInt(); 
-  runtime[2] = preferences.getString("slide3", "300").toInt(); 
-  runtime[3] = preferences.getString("slide4", "300").toInt(); 
-  runtime[4] = preferences.getString("slide5", "300").toInt(); 
-  runtime[5] = preferences.getString("slide6", "300").toInt(); 
-  runtime[6] = preferences.getString("slide7", "300").toInt(); 
-  runtime[7] = preferences.getString("slide8", "300").toInt(); 
-  
-  ESPUI.updateSlider(slideID1, runtime[0]); 
-  ESPUI.updateSlider(slideID2, runtime[1]); 
-  ESPUI.updateSlider(slideID3, runtime[2]); 
-  ESPUI.updateSlider(slideID4, runtime[3]); 
-  ESPUI.updateSlider(slideID5, runtime[4]); 
-  ESPUI.updateSlider(slideID6, runtime[5]); 
-  ESPUI.updateSlider(slideID7, runtime[6]); 
-  ESPUI.updateSlider(slideID8, runtime[7]); 
-
-	/*
-	 * Tab: WiFi Credentials
-	 * You use this tab to enter the SSID and password of a wifi network to autoconnect to.
-	 *-----------------------------------------------------------------------------------------------------------*/
-	auto wifitab = ESPUI.addControl(Tab, "", "WiFi Credentials");
-	wifi_ssid_text = ESPUI.addControl(Text, "SSID", "", Wetasphalt, wifitab, textCallback);
-	//Note that adding a "Max" control to a text control sets the max length
-	ESPUI.addControl(Max, "", "32", None, wifi_ssid_text);
-	wifi_pass_text = ESPUI.addControl(Text, "Password", "", Wetasphalt, wifitab, textCallback);
-	ESPUI.addControl(Max, "", "64", None, wifi_pass_text);
-	ESPUI.addControl(Button, "Save", "Save", Wetasphalt, wifitab, SaveWifiDetailsCallback);
-  /*
-   * Tab:System Maintenance
-   * You use this tab to upload new code OTA, see ElegantOTA library doc
-   *-----------------------------------------------------------------------------------------------------------*/
-   auto maintenancetab = ESPUI.addControl(Tab, "", "System Maintenance");
-   auto updateButton =   ESPUI.addControl(Label, "Code Update", "<a href=\"/update\"> <button>Update</button></a>", Wetasphalt, maintenancetab, generalCallback); 
-   ESPUI.setElementStyle(updateButton , clearLabelStyle);
-   ESPUI.addControl(Button, "", "Reboot",  Wetasphalt,  updateButton, ESPReset);
-   
-	//Finally, start up the UI.
-	//This should only be called once we are connected to WiFi.
-	ESPUI.begin("Garden Watering System");
-
-#ifdef ESP8266
-    } // HeapSelectIram
-#endif
-
-}
 
 // temperature measuring stuff ********************************************
 #define DS18B20
@@ -258,7 +111,7 @@ void setUpUI() {
 // sensor libraries
 #include <OneWire.h>
 #include <DallasTemperature.h>
-OneWire oneWire(21);  // sensor hooked to gpio21
+OneWire oneWire(TEMP_PIN);  // sensor hooked to TEMP_PIN
 DallasTemperature sensors(&oneWire);
 #endif
 
@@ -274,15 +127,15 @@ int getTempF() {
 #else
   int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
   // map diode voltage to temperature F  ( diode mv values recorded from freezing and boiling water)
-  // int tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
+  tempF = map(sensorValue, 640, 402, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
   // Wemos mini devides by  .3125
-  tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
+  //tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
 #endif
   return (tempF);
 }
 // temp stuff ***************************************************************
 
-char *Days[] = {
+String Days[] = {
   "Undefined",
   "Sunday",
   "Monday",
@@ -293,47 +146,152 @@ char *Days[] = {
   "Saturday"
 };
 
+void getBootReasonMessage(char *buffer, int bufferlength)
+{
+#if defined(ARDUINO_ARCH_ESP32)
+    esp_reset_reason_t reset_reason = esp_reset_reason();
+
+    switch (reset_reason)
+    {
+    case ESP_RST_UNKNOWN:
+        snprintf(buffer, bufferlength, "Reset reason can not be determined");
+        break;
+    case ESP_RST_POWERON:
+        snprintf(buffer, bufferlength, "Reset due to power-on event");
+        break;
+    case ESP_RST_SW:
+        snprintf(buffer, bufferlength, "Software reset via esp_restart");
+        break;
+    case ESP_RST_PANIC:
+        snprintf(buffer, bufferlength, "Software reset due to exception/panic");
+        break;
+    case ESP_RST_BROWNOUT:
+        snprintf(buffer, bufferlength, "Brownout reset (software or hardware)");
+        break;
+    default:
+        snprintf(buffer, bufferlength, "Unknown reset cause %d", reset_reason);
+        break;       
+    }
+ #endif
+
+#if defined(ARDUINO_ARCH_ESP8266)
+    rst_info *resetInfo;
+    resetInfo = ESP.getResetInfoPtr();
+
+    switch (resetInfo->reason)
+    {
+    case REASON_DEFAULT_RST:
+        snprintf(buffer, bufferlength, "Normal startup by power on");
+        break;
+    case REASON_WDT_RST:
+        snprintf(buffer, bufferlength, "Hardware watch dog reset");
+        break;
+    case REASON_EXCEPTION_RST:
+        snprintf(buffer, bufferlength, "Exception reset");
+        break;
+    case REASON_SOFT_WDT_RST:
+        snprintf(buffer, bufferlength, "Software watch dog reset");
+        break;
+    case REASON_SOFT_RESTART:
+        snprintf(buffer, bufferlength, "Software restart ,system_restart");
+        break;
+    case REASON_EXT_SYS_RST:
+        snprintf(buffer, bufferlength, "External system reset");
+        break;
+    default:
+        snprintf(buffer, bufferlength, "Unknown reset cause %d", resetInfo->reason);
+        break;
+    };
+#endif
+}
+
+#define BOOT_REASON_MESSAGE_SIZE 150
+char bootReasonMessage [BOOT_REASON_MESSAGE_SIZE];
+String bootTime;
+char IP[] = "xxx.xxx.xxx.xxx";  // IP address string
+extern void allOff();
+
 void setup() {
 
   relayConfig();
   allOff();
   pinMode(LED_BUILTIN, OUTPUT); // set heartbeat LED pin to OUTPUT
   
-	Serial.begin(115200);
-	while(!Serial);
-   
- #ifdef DS18B20 // temp sensor
-  sensors.begin();
-  if (sensors.getDeviceCount() != 0) {
-    Serial.println("temp sensor configured");
-  } else {
-    Serial.println("!!temp sensor configuration failed!!");    
-  }
-#endif
-
+  Serial.begin(115200);
+    
   if(!preferences.begin("Settings")) {
     Serial.println("Failed to open preferences.");
     ESP.restart();
-  } else {
-	  connectWifi();
- 
-	  setUpUI();
-    runHour = (stored_hour = preferences.getString("hour", "8")).toInt();
-    runMinute= (stored_minute = preferences.getString("minute", "0")).toInt();
-    ESPUI.updateNumber(hourNumber, stored_hour.toInt());
-    ESPUI.updateNumber(minuteNumber, stored_minute.toInt());   
-  }
-    
+  } 
+  connectWifi();
+
   timeClient.begin(); // set up ntp time client and then freewheeling time
   timeClient.setTimeOffset(-28800); // UTC to pacific standard time
   timeClient.update();         
   setTime(timeClient.getEpochTime()); // todo: may need to do this periodically
+
+#ifdef DS18B20 // temp sensor
+  sensors.begin();
+  if (sensors.getDeviceCount() != 0) {
+    Serial.println("temp sensor configured");
+  } else {
+    Serial.println("!!temp sensor configuration failed!!"); 
+  }
+#endif
+  dayBuffer.push(getTempF());  // prime average temperature buffer
   
-  webPrint( "%s up at: %2d:%2d on %s\n", HOSTNAME,  hour(), minute(), Days[weekday()]);
+  setUpUI();
   
-   // *********how to add an extended web page**********
-   ESPUI.WebServer()->on("/narf", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/html", "<A HREF = \"http://www.google.com/\">Google Search Engine</A>");
+  bootTime = " boot up @ " + timeClient.getFormattedTime() + ", "  + Days[weekday()] ;  
+  ESPUI.updateLabel(bootLabel,  String(bootTime));
+  runHour = (stored_hour = preferences.getString("hour", "8")).toInt();
+  runMinute= (stored_minute = preferences.getString("minute", "0")).toInt();
+  ESPUI.updateNumber(hourNumber, stored_hour.toInt());
+  ESPUI.updateNumber(minuteNumber, stored_minute.toInt());   
+  
+ // recall valve names from memory
+  ESPUI.updateText(valve1Label,  preferences.getString("name1", "valve 1"));
+  ESPUI.updateText(valve2Label,  preferences.getString("name2", "valve 2"));
+  ESPUI.updateText(valve3Label,  preferences.getString("name3", "valve 3"));
+  ESPUI.updateText(valve4Label,  preferences.getString("name4", "valve 4"));
+#ifdef RELAY8
+  ESPUI.updateText(valve5Label,  preferences.getString("name5", "valve 5"));
+  ESPUI.updateText(valve6Label,  preferences.getString("name6", "valve 6"));
+  ESPUI.updateText(valve7Label,  preferences.getString("name7", "valve 7"));
+  ESPUI.updateText(valve8Label,  preferences.getString("name8", "valve 8")); 
+#endif 
+
+// // name buttons  
+//  ESPUI.updateButton(button1Label,  preferences.getString("name1", "valve 1"));
+//  ESPUI.updateButton(button2Label,  preferences.getString("name2", "valve 2"));
+//  ESPUI.updateButton(button3Label,  preferences.getString("name3", "valve 3"));
+//  ESPUI.updateButton(button4Label,  preferences.getString("name4", "valve 4"));
+//#ifdef RELAY8
+//  ESPUI.updateButton(button5Label,  preferences.getString("name5", "valve 5"));
+//  ESPUI.updateButton(button6Label,  preferences.getString("name6", "valve 6"));
+//  ESPUI.updateButton(button7Label,  preferences.getString("name7", "valve 7"));
+//  ESPUI.updateButton(button8Label,  preferences.getString("name8", "valve 8")); 
+//#endif  
+//
+  // name sliders  ************** causes crash *******************
+//  ESPUI.updateLabel(slide1Label, ESPUI.getControl(valve1Label)->value);
+//  ESPUI.updateLabel(slide2Label, ESPUI.getControl(valve2Label)->value);
+//  ESPUI.updateLabel(slide3Label, ESPUI.getControl(valve3Label)->value);
+//  ESPUI.updateLabel(slide4Label, ESPUI.getControl(valve4Label)->value);
+//#ifdef RELAY8
+//  ESPUI.updateLabel(slide5Label, ESPUI.getControl(valve5Label)->value);
+//  ESPUI.updateLabel(slide6Label, ESPUI.getControl(valve6Label)->value);
+//  ESPUI.updateLabel(slide7Label, ESPUI.getControl(valve7Label)->value);
+//  ESPUI.updateLabel(slide8Label, ESPUI.getControl(valve8Label)->value); 
+//#endif    
+  
+  webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]); 
+  getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
+  webPrint("Reset reason: %s\n", bootReasonMessage);
+
+  // *********how to add an extended web page**********
+  ESPUI.WebServer()->on("/narf", HTTP_GET, [](AsyncWebServerRequest *request) {
+  request->send(200, "text/html", "<A HREF = \"http://192.168.0.74:8080/\">Rear Controller</A>");
   });
 
   ElegantOTA.begin(ESPUI.WebServer());    // Start ElegantOTA
@@ -341,34 +299,34 @@ void setup() {
   Serial.println("We Are Go!");
 }
 
+long unsigned  previousTime = 0;
 void loop() {
+
+  timeClient.update();     // run ntp time client  
+  timer.tick();            // tick the timer (to shut down valve tests after two minutes)
+  tempAdjRunTime();
+  controlRelays();         // activate relay if correct time
   ElegantOTA.loop();
-	static long unsigned SecondTimer = 0;
-  
-	if(millis() > SecondTimer + 1000) {
-    
+ 
+	if(millis() >  previousTime + 1000 ) { // update gui once per second
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // toggle the LED
-    
-    controlRelays();  // activate relay if correct time
-    
-    fetchDebugText();
-    String debugString = (char*)charBuf;
-    ESPUI.updateLabel(debugLabel, debugString);
-    
-    ESPUI.updateTime(mainTime);
-    ESPUI.updateLabel(tempLabel, String( getTempF()) + " deg F");
-    
-    SecondTimer = millis();
-  }
+    // toggle gui update to prevent blowing out stack
+    if(second() % 2 == 0) {
+      fetchDebugText();
+      String debugString = (char*)charBuf;
+      ESPUI.updateLabel(debugLabel, debugString);
+      ESPUI.updateTime(mainTime);
+    } else {
+      ESPUI.updateLabel(tempLabel, String( getTempF()) + " deg F");
+      ESPUI.updateLabel(signalLabel, String(WiFi.RSSI()) + " dbm");
+    }
+     previousTime = millis();
+  } 
   
-  timeClient.update();      // run ntp time client  
-  timer.tick();             // tick the timer (to shut down valve tests after two minutes)
-
-	#if !defined(ESP32)
-		//We don't need to call this explicitly on ESP32 but we do on 8266
-		MDNS.update();
-	#endif
-
+#if !defined(ESP32)
+  //We don't need to call this explicitly on ESP32 but we do on 8266
+  MDNS.update();
+#endif
 }
 
 void connectWifi() {
@@ -389,7 +347,6 @@ void connectWifi() {
 
 	//Try to connect with stored credentials, fire up an access point if they don't work.
    Serial.println("Connecting to : " + stored_ssid);
-   //Serial.println("With Password : " + stored_pass);
 	#if defined(ESP32)
 		WiFi.begin(stored_ssid.c_str(), stored_pass.c_str());
 	#else
@@ -403,14 +360,11 @@ void connectWifi() {
 	}
 
 	if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Wifi started with IP ");
-		Serial.println(WiFi.localIP());     // print out ip address
-   
-    char IP[] = "xxx.xxx.xxx.xxx";         
-    IPAddress ip = WiFi.localIP();
+        
+    IPAddress ip = WiFi.localIP();   // display ip address
     ip.toString().toCharArray(IP, 16);
-    webPrint("IP address = %s \n", IP);   
-
+    webPrint("Wifi up, IP address = %s \n", IP);   
+    
 		if (!MDNS.begin(HOSTNAME)) {
 			Serial.println("Error setting up MDNS responder!");
 		}
@@ -420,12 +374,6 @@ void connectWifi() {
 		WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
 		WiFi.softAP(HOSTNAME);
 
-		connect_timeout = 20;
-		do {
-			delay(250);
-			Serial.print(",");
-			connect_timeout--;
-		} while(connect_timeout);
 	}
   #if defined(ESP32)
     WiFi.setSleep(false); //For the ESP32: turn off sleeping to increase UI responsivness (at the cost of power use)
