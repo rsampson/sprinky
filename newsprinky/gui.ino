@@ -16,6 +16,7 @@ void setUpUI() {
    * Tab: Basic Controls
    * This tab contains all the basic ESPUI controls, and shows how to read and update them at runtime.
    *-----------------------------------------------------------------------------------------------------------*/
+
   char styleBuff[30]; // temp buffer for css styles
   auto maintab = ESPUI.addControl(Tab, "", "System Status");
   
@@ -23,12 +24,15 @@ void setUpUI() {
   // change lable font size
   sprintf(styleBuff, "font-size: 25px;");
   ESPUI.setElementStyle(timeLabel, styleBuff);
+
   bootLabel =    ESPUI.addControl(Label, "Boot Time", "", Wetasphalt, timeLabel, generalCallback);
-  
+  bootTime = " boot up @ " + timeClient.getFormattedTime() + ", "  + Days[weekday()] ;  
+  ESPUI.updateLabel(bootLabel,  String(bootTime));
+
   tempLabel =    ESPUI.addControl(Label, "Outside Temperature", "", Wetasphalt, maintab, generalCallback);
   ESPUI.setElementStyle(tempLabel, styleBuff);
   aveTempLabel =    ESPUI.addControl(Label, "24 Hour Average Temperature", "", Wetasphalt, tempLabel, generalCallback);
-    
+  
   signalLabel =  ESPUI.addControl(Label, "WiFi Signal Strength", "", Wetasphalt, maintab, generalCallback);
   ESPUI.setElementStyle(signalLabel, styleBuff);
   
@@ -36,8 +40,7 @@ void setUpUI() {
   ESPUI.setElementStyle(runtimeLabel, styleBuff);
 
   mainSwitcher = ESPUI.addControl(Switcher, "Watering Disable", "0", Wetasphalt, maintab, switchCallback);
-  disable = preferences.getBool("disable", "0");
-  ESPUI.updateSwitcher(mainSwitcher, disable);
+  
   debugLabel =   ESPUI.addControl(Label, "Debug", "some message", Wetasphalt, maintab, generalCallback);
   
    mainTime = ESPUI.addControl(Time, "", "", None, 0,
@@ -50,21 +53,47 @@ void setUpUI() {
   /*
    * Tab: Valve controls
    *-----------------------------------------------------------------------------------------------------------*/
+   // recover the names of our valves from memory
+   String name1,name2,name3,name4,name5,name6,name7,name8;
+   
+  name1 =  preferences.getString("name1", "valve 1");
+  name2 =  preferences.getString("name2", "valve 2");
+  name3 =  preferences.getString("name3", "valve 3");
+  name4 =  preferences.getString("name4", "valve 4");
+#ifdef RELAY8
+  name5 =  preferences.getString("name5", "valve 5");
+  name6 =  preferences.getString("name6", "valve 6");
+  name7 =  preferences.getString("name7", "valve 7");
+  name8 =  preferences.getString("name8", "valve 8"); 
+#endif
+
   auto grouptab = ESPUI.addControl(Tab, "", "Valve Controls");
   ESPUI.addControl(Separator, "Valve Diagnostics (open valve for two minutes)", "", None, grouptab);
   //The parent of this button is a tab, so it will create a new panel with one control.
   auto groupbutton = ESPUI.addControl(Button, "Valve Test", "valve 1", Wetasphalt, grouptab, valveButtonCallback);
   //However the parent of this button is another control, so therefore no new panel is
   //created and the button is added to the existing panel.
-  ESPUI.addControl(Button, "", "valve 2", Wetasphalt, groupbutton, valveButtonCallback);
-  ESPUI.addControl(Button, "", "valve 3", Wetasphalt, groupbutton, valveButtonCallback);
-  ESPUI.addControl(Button, "", "valve 4", Wetasphalt, groupbutton, valveButtonCallback);
+  button2Label = ESPUI.addControl(Button, "", "valve 2", Wetasphalt, groupbutton, valveButtonCallback);
+  button3Label = ESPUI.addControl(Button, "", "valve 3", Wetasphalt, groupbutton, valveButtonCallback);
+  button4Label = ESPUI.addControl(Button, "", "valve 4", Wetasphalt, groupbutton, valveButtonCallback);
 #ifdef RELAY8 
-  ESPUI.addControl(Button, "", "valve 5", Wetasphalt, groupbutton, valveButtonCallback);
-  ESPUI.addControl(Button, "", "valve 6", Wetasphalt, groupbutton, valveButtonCallback);
-  ESPUI.addControl(Button, "", "valve 7", Wetasphalt, groupbutton, valveButtonCallback);
-  ESPUI.addControl(Button, "", "valve 8", Wetasphalt, groupbutton, valveButtonCallback);
+  button5Label = ESPUI.addControl(Button, "", "valve 5", Wetasphalt, groupbutton, valveButtonCallback);
+  button6Label = ESPUI.addControl(Button, "", "valve 6", Wetasphalt, groupbutton, valveButtonCallback);
+  button7Label = ESPUI.addControl(Button, "", "valve 7", Wetasphalt, groupbutton, valveButtonCallback);
+  button8Label = ESPUI.addControl(Button, "", "valve 8", Wetasphalt, groupbutton, valveButtonCallback);
 #endif 
+ // name buttons  ******************* this crashes ******************
+//  ESPUI.updateControlValue(button1Label, name1 );
+//  ESPUI.updateControlValue(button2Label, name2 );
+//  ESPUI.updateControlValue(button3Label, name3 );
+//  ESPUI.updateControlValue(button4Label, name4 );
+//#ifdef RELAY8
+//  ESPUI.updateControlValue(button5Label, name5 );
+//  ESPUI.updateControlValue(button6Label, name6 );
+//  ESPUI.updateControlValue(button7Label, name7 );
+//  ESPUI.updateControlValue(button8Label, name8 ); 
+//#endif  
+
 
 // valve names ----------------------------------------------------------------------------
 
@@ -78,9 +107,21 @@ void setUpUI() {
   valve7Label =  ESPUI.addControl(Text, "", "valve 7", Wetasphalt, valve1Label, generalCallback);
   valve8Label =  ESPUI.addControl(Text, "", "valve 8", Wetasphalt, valve1Label, generalCallback);
 #endif 
-        
-  ESPUI.addControl(Separator, "Run Time Settings", "", None, grouptab);
 
+ // recall valve names from memory
+  ESPUI.updateText(valve1Label,  preferences.getString("name1", "valve 1"));
+  ESPUI.updateText(valve2Label,  preferences.getString("name2", "valve 2"));
+  ESPUI.updateText(valve3Label,  preferences.getString("name3", "valve 3"));
+  ESPUI.updateText(valve4Label,  preferences.getString("name4", "valve 4"));
+#ifdef RELAY8
+  ESPUI.updateText(valve5Label,  preferences.getString("name5", "valve 5"));
+  ESPUI.updateText(valve6Label,  preferences.getString("name6", "valve 6"));
+  ESPUI.updateText(valve7Label,  preferences.getString("name7", "valve 7"));
+  ESPUI.updateText(valve8Label,  preferences.getString("name8", "valve 8")); 
+#endif 
+        
+  // Run start time       
+  ESPUI.addControl(Separator, "Run Time Settings", "", None, grouptab);
   //Number inputs also accept Min and Max components, but you should still validate the values.
   hourNumber = ESPUI.addControl(Number, "Run Hour", "12", Wetasphalt, grouptab, hourCallback);
   ESPUI.addControl(Min, "", "0", None, hourNumber);
@@ -90,13 +131,20 @@ void setUpUI() {
   ESPUI.addControl(Min, "", "0", None, minuteNumber);
   ESPUI.addControl(Max, "", "60", None, minuteNumber); 
 
+  runHour = (stored_hour = preferences.getString("hour", "8")).toInt();
+  runMinute= (stored_minute = preferences.getString("minute", "0")).toInt();
+
+  ESPUI.updateNumber(hourNumber, stored_hour.toInt());
+  ESPUI.updateNumber(minuteNumber, stored_minute.toInt());   
+
+
   ESPUI.addControl(Button, "Run Watering Sequence", "Run", Wetasphalt, grouptab, RunCallback);  
   
   ESPUI.addControl(Button, "Save Schedule/ Valve Names", "Save", Wetasphalt, grouptab, SaveScheduleCallback);
   
   
   //************Sliders************** can be grouped as well 
-  
+
   //To label each slider in the group, we are going add additional labels and give them custom CSS styles
   //We need this CSS style rule, which will remove the label's background and ensure that it takes up the entire width of the panel
   String clearLabelStyle = "background-color: unset; width: 100%;";
@@ -163,7 +211,7 @@ void setUpUI() {
   runtime[6] = preferences.getString("slide7", "300").toInt(); 
   runtime[7] = preferences.getString("slide8", "300").toInt(); 
 #endif
-  
+
   ESPUI.updateSlider(slideID1, runtime[0]); 
   ESPUI.updateSlider(slideID2, runtime[1]); 
   ESPUI.updateSlider(slideID3, runtime[2]); 
@@ -173,13 +221,24 @@ void setUpUI() {
   ESPUI.updateSlider(slideID6, runtime[5]); 
   ESPUI.updateSlider(slideID7, runtime[6]); 
   ESPUI.updateSlider(slideID8, runtime[7]); 
-#endif
+ #endif
 
+ //name sliders  
+  ESPUI.updateLabel(slide1Label, name1);
+  ESPUI.updateLabel(slide2Label, name2);
+  ESPUI.updateLabel(slide3Label, name3);
+  ESPUI.updateLabel(slide4Label, name4);
+#ifdef RELAY8
+  ESPUI.updateLabel(slide5Label, name5);
+  ESPUI.updateLabel(slide6Label, name6);
+  ESPUI.updateLabel(slide7Label, name7);
+  ESPUI.updateLabel(slide8Label, name8); 
+#endif    
+ 
   /*
    * Tab: WiFi Credentials
    * You use this tab to enter the SSID and password of a wifi network to autoconnect to.
    *-----------------------------------------------------------------------------------------------------------*/
-
   auto wifitab = ESPUI.addControl(Tab, "", "WiFi Credentials");
   wifi_ssid_text = ESPUI.addControl(Text, "SSID", "", Wetasphalt, wifitab, textCallback);
   //Note that adding a "Max" control to a text control sets the max length
@@ -187,7 +246,7 @@ void setUpUI() {
   wifi_pass_text = ESPUI.addControl(Text, "Password", "", Wetasphalt, wifitab, textCallback);
   ESPUI.addControl(Max, "", "64", None, wifi_pass_text);
   ESPUI.addControl(Button, "Save", "Save", Wetasphalt, wifitab, SaveWifiDetailsCallback);
-  
+    
   /*
    * Tab:System Maintenance
    * You use this tab to upload new code OTA, see ElegantOTA library doc
@@ -197,9 +256,19 @@ void setUpUI() {
    ESPUI.setElementStyle(updateButton , clearLabelStyle);
    ESPUI.addControl(Button, "", "Reboot",  Wetasphalt,  updateButton, ESPReset);
 
-  //Finally, start up the UI.
+  // *********how to add an extended web page**********
+//  ESPUI.WebServer()->on("/narf", HTTP_GET, [](AsyncWebServerRequest *request) {
+//  request->send(200, "text/html", "<A HREF = \"http://192.168.0.74:8080/\">Rear Controller</A>");
+//  });
+
+   //Finally, start up the UI.
   //This should only be called once we are connected to WiFi.
   ESPUI.begin("Garden Watering System");
+  // boot up message
+  webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]); 
+  getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
+  webPrint("Reset reason: %s\n", bootReasonMessage);
+
 
 #ifdef ESP8266
     } // HeapSelectIram

@@ -240,68 +240,24 @@ void setup() {
 #endif
   dayBuffer.push(getTempF());  // prime average temperature buffer
   
+  Serial.println("configuring Gui"); 
   setUpUI();
   
-  bootTime = " boot up @ " + timeClient.getFormattedTime() + ", "  + Days[weekday()] ;  
-  ESPUI.updateLabel(bootLabel,  String(bootTime));
-  runHour = (stored_hour = preferences.getString("hour", "8")).toInt();
-  runMinute= (stored_minute = preferences.getString("minute", "0")).toInt();
-  ESPUI.updateNumber(hourNumber, stored_hour.toInt());
-  ESPUI.updateNumber(minuteNumber, stored_minute.toInt());   
+  disable = preferences.getBool("disable", "0");
+  ESPUI.updateSwitcher(mainSwitcher, disable);
+  ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: " + String( getTempF()));  // initialize with current temp
   
- // recall valve names from memory
-  ESPUI.updateText(valve1Label,  preferences.getString("name1", "valve 1"));
-  ESPUI.updateText(valve2Label,  preferences.getString("name2", "valve 2"));
-  ESPUI.updateText(valve3Label,  preferences.getString("name3", "valve 3"));
-  ESPUI.updateText(valve4Label,  preferences.getString("name4", "valve 4"));
-#ifdef RELAY8
-  ESPUI.updateText(valve5Label,  preferences.getString("name5", "valve 5"));
-  ESPUI.updateText(valve6Label,  preferences.getString("name6", "valve 6"));
-  ESPUI.updateText(valve7Label,  preferences.getString("name7", "valve 7"));
-  ESPUI.updateText(valve8Label,  preferences.getString("name8", "valve 8")); 
-#endif 
-
-// // name buttons  
-//  ESPUI.updateButton(button1Label,  preferences.getString("name1", "valve 1"));
-//  ESPUI.updateButton(button2Label,  preferences.getString("name2", "valve 2"));
-//  ESPUI.updateButton(button3Label,  preferences.getString("name3", "valve 3"));
-//  ESPUI.updateButton(button4Label,  preferences.getString("name4", "valve 4"));
-//#ifdef RELAY8
-//  ESPUI.updateButton(button5Label,  preferences.getString("name5", "valve 5"));
-//  ESPUI.updateButton(button6Label,  preferences.getString("name6", "valve 6"));
-//  ESPUI.updateButton(button7Label,  preferences.getString("name7", "valve 7"));
-//  ESPUI.updateButton(button8Label,  preferences.getString("name8", "valve 8")); 
-//#endif  
-//
-  // name sliders  ************** causes crash *******************
-//  ESPUI.updateLabel(slide1Label, ESPUI.getControl(valve1Label)->value);
-//  ESPUI.updateLabel(slide2Label, ESPUI.getControl(valve2Label)->value);
-//  ESPUI.updateLabel(slide3Label, ESPUI.getControl(valve3Label)->value);
-//  ESPUI.updateLabel(slide4Label, ESPUI.getControl(valve4Label)->value);
-//#ifdef RELAY8
-//  ESPUI.updateLabel(slide5Label, ESPUI.getControl(valve5Label)->value);
-//  ESPUI.updateLabel(slide6Label, ESPUI.getControl(valve6Label)->value);
-//  ESPUI.updateLabel(slide7Label, ESPUI.getControl(valve7Label)->value);
-//  ESPUI.updateLabel(slide8Label, ESPUI.getControl(valve8Label)->value); 
-//#endif    
-  
-  webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]); 
-  getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
-  webPrint("Reset reason: %s\n", bootReasonMessage);
-
-  // *********how to add an extended web page**********
-  ESPUI.WebServer()->on("/narf", HTTP_GET, [](AsyncWebServerRequest *request) {
-  request->send(200, "text/html", "<A HREF = \"http://192.168.0.74:8080/\">Rear Controller</A>");
-  });
-
   ElegantOTA.begin(ESPUI.WebServer());    // Start ElegantOTA
 
   Serial.println("We Are Go!");
 }
 
-long unsigned  previousTime = 0;
-void loop() {
 
+
+void loop() {
+  static long unsigned  previousTime;
+  static bool ledToggle;
+  
   timeClient.update();     // run ntp time client  
   timer.tick();            // tick the timer (to shut down valve tests after two minutes)
   tempAdjRunTime();
@@ -309,20 +265,15 @@ void loop() {
   ElegantOTA.loop();
  
 	if(millis() >  previousTime + 1000 ) { // update gui once per second
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // toggle the LED
-    // toggle gui update to prevent blowing out stack
-    if(second() % 2 == 0) {
-      fetchDebugText();
-      String debugString = (char*)charBuf;
-      ESPUI.updateLabel(debugLabel, debugString);
-      ESPUI.updateTime(mainTime);
-    } else {
-      ESPUI.updateLabel(tempLabel, String( getTempF()) + " deg F");
-      ESPUI.updateLabel(signalLabel, String(WiFi.RSSI()) + " dbm");
-    }
-     previousTime = millis();
+    digitalWrite(LED_BUILTIN, !ledToggle); // toggle the LED
+    fetchDebugText();
+    String debugString = (char*)charBuf;
+    ESPUI.updateLabel(debugLabel, debugString);
+    ESPUI.updateTime(mainTime);
+    ESPUI.updateLabel(tempLabel, String( getTempF()) + " deg F");
+    ESPUI.updateLabel(signalLabel, String(WiFi.RSSI()) + " dbm");
+    previousTime = millis();
   } 
-  
 #if !defined(ESP32)
   //We don't need to call this explicitly on ESP32 but we do on 8266
   MDNS.update();
@@ -339,7 +290,6 @@ void connectWifi() {
 #endif
 	Serial.println("Begin wifi...");
 
-	//Load credentials from EEPROM
 	yield();
 
   stored_ssid = preferences.getString("ssid", "SSID");

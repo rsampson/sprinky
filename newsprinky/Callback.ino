@@ -23,7 +23,6 @@ void textCallback(Control *sender, int type) {
   //This callback is needed to handle the changed values, even though it doesn't do anything itself.
 }
 
-
 extern uint32_t start_time_ms;
 extern bool runCycle;
 //Watering schedule settings callback========================================
@@ -68,17 +67,17 @@ void SaveScheduleCallback(Control *sender, int type) {
     preferences.putString("name8", ESPUI.getControl(valve8Label)->value); 
 #endif  
 
-//    // rename buttons  
-//    ESPUI.updateButton(button1Label, ESPUI.getControl(valve1Label)->value);
-//    ESPUI.updateButton(button2Label, ESPUI.getControl(valve2Label)->value);
-//    ESPUI.updateButton(button3Label, ESPUI.getControl(valve3Label)->value);
-//    ESPUI.updateButton(button4Label, ESPUI.getControl(valve4Label)->value);
-//#ifdef RELAY8
-//    ESPUI.updateButton(button5Label, ESPUI.getControl(valve5Label)->value);
-//    ESPUI.updateButton(button6Label, ESPUI.getControl(valve6Label)->value);
-//    ESPUI.updateButton(button7Label, ESPUI.getControl(valve7Label)->value);
-//    ESPUI.updateButton(button8Label, ESPUI.getControl(valve8Label)->value); 
-//#endif    
+////    // rename buttons  
+////    ESPUI.updateButton(button1Label, ESPUI.getControl(valve1Label)->value);
+////    ESPUI.updateButton(button2Label, ESPUI.getControl(valve2Label)->value);
+////    ESPUI.updateButton(button3Label, ESPUI.getControl(valve3Label)->value);
+////    ESPUI.updateButton(button4Label, ESPUI.getControl(valve4Label)->value);
+////#ifdef RELAY8
+////    ESPUI.updateButton(button5Label, ESPUI.getControl(valve5Label)->value);
+////    ESPUI.updateButton(button6Label, ESPUI.getControl(valve6Label)->value);
+////    ESPUI.updateButton(button7Label, ESPUI.getControl(valve7Label)->value);
+////    ESPUI.updateButton(button8Label, ESPUI.getControl(valve8Label)->value); 
+////#endif    
 
     // rename sliders  
     ESPUI.updateLabel(slide1Label, ESPUI.getControl(valve1Label)->value);

@@ -45,16 +45,18 @@ bool shutOff(void*) {  // bool return and void* makes timer api happy
   return (false);
 }
 
-// turn relay rl on, all others off
-void relayOn(int rl) {
+// turn a specific relay on, all others off
+void relayOn(int relay_index) {
   
-//  if (digitalRead(rl) == OFF) { // only print if off
-//     webPrint("Valve %1d on %s @ %s \n", rl + 1,  Days[weekday()], timeClient.getFormattedTime());
-//  }
-  
-  for (int i = 0; i < NUM_RELAYS); i++)     { // make sure only one relay is on at a time
-    digitalWrite(relay[i], i == rl ? ON : OFF);
+  if (digitalRead(relay_index) == ON) { // only print if off
+    return;
   }
+
+  for (int i = 0; i < NUM_RELAYS); i++)     { // make sure only one relay is on at a time
+    digitalWrite(relay[i], (i == relay_index) ? ON: OFF);
+  }
+  
+   webPrint("Valve %1d on %s @ %s \n", relay_index + 1,  Days[weekday()], timeClient.getFormattedTime());
 }
 
 uint32_t start_time_ms = 0;
@@ -77,58 +79,66 @@ bool runCycle = false;
 
 void controlRelays() {
 
-  if (!disable) {  // if not disabled
-    time_t t = now(); // Store the current time atomically
-    if (hour(t) == runHour && minute(t) == runMinute && second(t) == 0 && runCycle == false) {  // trigger start of cycle
-      allOff();
-      timer.cancel(); // cancel any manual operations
-      start_time_ms = millis();
-      runCycle = true;
-    }
+  if (disable)
+  {
+    return;
+  }
 
-    if (runCycle == true) {      // run watering cycle if is time
-      if      (millis() >= START1 && millis() < START2) relayOn(0);
-      else if (millis() >= START2 && millis() < START3) relayOn(1);
-      else if (millis() >= START3 && millis() < START4) relayOn(2);
-      else if (millis() >= START4 && millis() < START5) relayOn(3);
+  time_t t = now(); // Store the current time atomically
+  if (hour(t) == runHour && minute(t) == runMinute && second(t) == 0 && runCycle == false) {  // trigger start of cycle
+    allOff();
+    timer.cancel(); // cancel any manual operations
+    start_time_ms = millis();
+    runCycle = true;
+  }
+
+  if (runCycle == true) {      // run watering cycle if is time
+    if      (millis() >= START1 && millis() < START2) relayOn(0);
+    else if (millis() >= START2 && millis() < START3) relayOn(1);
+    else if (millis() >= START3 && millis() < START4) relayOn(2);
+    else if (millis() >= START4 && millis() < START5) relayOn(3);
 #ifdef RELAY8
-      else if (millis() >= START5 && millis() < START6) relayOn(4);
-      else if (millis() >= START6 && millis() < START7) relayOn(5);
-      else if (millis() >= START7 && millis() < START8) relayOn(6);
-      else if (millis() >= START8 && millis() < START9) relayOn(7);
+    else if (millis() >= START5 && millis() < START6) relayOn(4);
+    else if (millis() >= START6 && millis() < START7) relayOn(5);
+    else if (millis() >= START7 && millis() < START8) relayOn(6);
+    else if (millis() >= START8 && millis() < START9) relayOn(7);
 #endif
-      else {         // terminate cycle
-        allOff();
-        // print statistics
-        ESPUI.updateLabel(runtimeLabel, String((now() - t) / 60000) + " minutes");
-        webPrint("Average 24 hour temperature is %3.1f \n", avg_temp);
-        webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
-        runCycle = false;
-      }
+    else {         // terminate cycle
+      allOff();
+      // print statistics
+      static String totalRunTime  = String ((millis() - start_time_ms) / 60000);
+      ESPUI.updateLabel(runtimeLabel, totalRunTime + " minutes");
+      webPrint("Daily total run time is %s minutes\n", totalRunTime);
+      webPrint("Average 24 hour temperature is %3.1f \n", avg_temp);
+      webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
+      runCycle = false;
     }
   }
 }
 
-bool haveRun = false;
+
 
 // compute an adjustment to run time based on average temperature
 void tempAdjRunTime(void) {
+  static bool haveRun = false;
   
   time_t t = now(); // Store the current time atomically
   if (minute(t) == 0 && second(t) == 0 && haveRun == false) { // do once each hour
     //if (  second(t) == 0 && haveRun == false) { // do once each minute
     haveRun = true;
-    
+
     // samples temp and computes the average of the last 24 hours
     dayBuffer.push(getTempF());
     // the following ensures using the right type for the index variable
     using index_t = decltype(dayBuffer)::index_t;
-    avg_temp = 0.0;
-    
+    float avg_temp = 0.0;
+
     for (index_t i = 0; i < dayBuffer.size(); i++) {
-      avg_temp += dayBuffer[i] / (float)dayBuffer.size();
+      avg_temp += dayBuffer[i] ;
     }
     
+    avg_temp = avg_temp / (float)dayBuffer.size();
+
     ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: " + String(avg_temp));
     // expand watering time 0 to 2x over a 35-110 degree temp range
     // map it into milli seconds
