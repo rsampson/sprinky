@@ -16,25 +16,25 @@ int relay[8] = {32, 33, 25, 26, 27, 14, 12, 13};
 int relay[4] = {16, 14, 12, 13};
 #endif
 
-//#define SUNDAY    1
-//#define MONDAY    2
-//#define TUESDAY   3
-//#define WEDNESDAY 4
-//#define THURSDAY  5
-//#define FRIDAY    6
-//#define SATURDAY  7
+#ifdef RELAY8
+#define NUM_RELAYS 8
+#elif
+#define NUM_RELAYS 4
+#endif
 
-#define NUM_RELAYS (sizeof(relay) / sizeof(relay[0])
 
 void relayConfig() {
-  for (int i = 0; i < NUM_RELAYS); i++) {
+  for (int i = 0; i < NUM_RELAYS; i++) {
     pinMode(relay[i], OUTPUT);
   }
 }
 
+bool relayEnabled[NUM_RELAYS];
+
 void allOff() {
-  for (int i = 0; i < NUM_RELAYS); i++) {
+  for (int i = 0; i < NUM_RELAYS; i++) {
     digitalWrite(relay[i], OFF);
+    relayEnabled[i] = false;
   }
 }
 
@@ -47,20 +47,24 @@ bool shutOff(void*) {  // bool return and void* makes timer api happy
 
 // turn a specific relay on, all others off
 void relayOn(int relay_index) {
-  
-  if (digitalRead(relay_index) == ON) { // only print if off
-    return;
-  }
 
-  for (int i = 0; i < NUM_RELAYS); i++)     { // make sure only one relay is on at a time
+  if(relayEnabled[relay_index] == true) return; // only turn on if off
+
+  for (int i = 0; i < NUM_RELAYS; i++)     { // make sure only one relay is on at a time
     digitalWrite(relay[i], (i == relay_index) ? ON: OFF);
+    relayEnabled[i] = (i == relay_index);
   }
+  
+//  for (int k = 0; k < 10; k++)     { // make sure the damn thing is really on
+//    digitalWrite(relay[relay_index], ON);
+//  }
   
    webPrint("Valve %1d on %s @ %s \n", relay_index + 1,  Days[weekday()], timeClient.getFormattedTime());
 }
 
 uint32_t start_time_ms = 0;
 uint32_t temp_adjust = 1000; // scaled ms in second
+
 // runtimes are in seconds, start times are in ms
 // temp_adjust has the sec to ms conversion factored in (temp adjust is in ms)
 #define START1  start_time_ms
@@ -74,7 +78,6 @@ uint32_t temp_adjust = 1000; // scaled ms in second
 #define START9  (START8 + runtime[7] * temp_adjust)
 
 
-float avg_temp = 70.0;
 bool runCycle = false;
 
 void controlRelays() {
@@ -117,34 +120,32 @@ void controlRelays() {
 }
 
 
-
 // compute an adjustment to run time based on average temperature
 void tempAdjRunTime(void) {
   static bool haveRun = false;
   
   time_t t = now(); // Store the current time atomically
   if (minute(t) == 0 && second(t) == 0 && haveRun == false) { // do once each hour
-    //if (  second(t) == 0 && haveRun == false) { // do once each minute
+
     haveRun = true;
 
     // samples temp and computes the average of the last 24 hours
     dayBuffer.push(getTempF());
     // the following ensures using the right type for the index variable
     using index_t = decltype(dayBuffer)::index_t;
-    float avg_temp = 0.0;
-
+ 
     for (index_t i = 0; i < dayBuffer.size(); i++) {
       avg_temp += dayBuffer[i] ;
     }
     
     avg_temp = avg_temp / (float)dayBuffer.size();
 
-    ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: " + String(avg_temp));
+    ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: " + String(avg_temp) + " F");
     // expand watering time 0 to 2x over a 35-110 degree temp range
     // map it into milli seconds
     temp_adjust = map((int32_t)avg_temp, 35, 110, 1, 2000);
 
   }
   if (minute(t) == 0 && second(t) >= 1) haveRun = false;  // clear for run next hour
-  //if ( second(t) == 1) haveRun = false;  // clear for run next hour
+
 }

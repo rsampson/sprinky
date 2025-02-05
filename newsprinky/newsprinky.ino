@@ -9,8 +9,8 @@
  *
  */
 
- // ToDo:  display total daily, monthly watering run time. Create valve labels. Link separate controllers. Show boot reason, add run sequence button.
-
+ // ToDo:  display total monthly watering run time.  Link separate controllers.
+ 
 // Tested on ESP32 WROOM 32  and ESP12-F (esp8266)
 
 #include <Arduino.h>
@@ -18,12 +18,12 @@
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2
+#endif
 
 #if defined(ESP32)
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #define TEMP_PIN 21
-#endif
 #define RELAY8
 #else
 
@@ -46,6 +46,7 @@
 #endif
 #endif
 #endif
+
 
 #include <NTPClient.h> // for ntp time client
 #include <WiFiUdp.h>
@@ -78,6 +79,7 @@ void SaveSheduleCallback(Control *sender, int type);
 void paramCallback(Control* sender, int type, int param);
 void slideCallback(Control *sender, int type);
 void tempAdjRunTime(void);
+void controlRelays(void);
 
 //ESPUI=================================================================================================================
 #include <ESPUI.h>
@@ -208,15 +210,12 @@ void getBootReasonMessage(char *buffer, int bufferlength)
 #define BOOT_REASON_MESSAGE_SIZE 150
 char bootReasonMessage [BOOT_REASON_MESSAGE_SIZE];
 String bootTime;
+float avg_temp = 70.0;
 char IP[] = "xxx.xxx.xxx.xxx";  // IP address string
 extern void allOff();
 
 void setup() {
 
-  relayConfig();
-  allOff();
-  pinMode(LED_BUILTIN, OUTPUT); // set heartbeat LED pin to OUTPUT
-  
   Serial.begin(115200);
     
   if(!preferences.begin("Settings")) {
@@ -224,7 +223,12 @@ void setup() {
     ESP.restart();
   } 
   connectWifi();
-
+  
+  relayConfig();
+  allOff();
+  pinMode(LED_BUILTIN, OUTPUT); // set heartbeat LED pin to OUTPUT
+  digitalWrite(LED_BUILTIN, LOW); 
+  
   timeClient.begin(); // set up ntp time client and then freewheeling time
   timeClient.setTimeOffset(-28800); // UTC to pacific standard time
   timeClient.update();         
@@ -245,19 +249,17 @@ void setup() {
   
   disable = preferences.getBool("disable", "0");
   ESPUI.updateSwitcher(mainSwitcher, disable);
-  ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: " + String( getTempF()));  // initialize with current temp
+  avg_temp = float(getTempF());
+  //ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: " + String(avg_temp) " F");
   
   ElegantOTA.begin(ESPUI.WebServer());    // Start ElegantOTA
 
   Serial.println("We Are Go!");
 }
 
-
+long unsigned  previousTime;
 
 void loop() {
-  static long unsigned  previousTime;
-  static bool ledToggle;
-  
   timeClient.update();     // run ntp time client  
   timer.tick();            // tick the timer (to shut down valve tests after two minutes)
   tempAdjRunTime();
@@ -265,7 +267,7 @@ void loop() {
   ElegantOTA.loop();
  
 	if(millis() >  previousTime + 1000 ) { // update gui once per second
-    digitalWrite(LED_BUILTIN, !ledToggle); // toggle the LED
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // toggle the LED
     fetchDebugText();
     String debugString = (char*)charBuf;
     ESPUI.updateLabel(debugLabel, debugString);
