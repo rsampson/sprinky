@@ -19,20 +19,21 @@ void setUpUI() {
 
   char styleBuff[30]; // temp buffer for css styles
   auto maintab = ESPUI.addControl(Tab, "", "System Status");
-  
+
   timeLabel =    ESPUI.addControl(Label, "Current Time", "", Wetasphalt, maintab, generalCallback);
   // change lable font size
   sprintf(styleBuff, "font-size: 25px;");
   ESPUI.setElementStyle(timeLabel, styleBuff);
 
-  bootLabel =    ESPUI.addControl(Label, "Boot Time", "", Wetasphalt, timeLabel, generalCallback);
-  bootTime = " boot up @ " + timeClient.getFormattedTime() + ", "  + Days[weekday()] ;  
-  ESPUI.updateLabel(bootLabel,  String(bootTime));
+  // bootLabel =    ESPUI.addControl(Label, "Boot Time", "", Wetasphalt, timeLabel, generalCallback);
+  // bootTime = " boot up @ " + timeClient.getFormattedTime() + ", "  + Days[weekday()] ;  
+  // ESPUI.updateLabel(bootLabel,  String(bootTime));
 
   tempLabel =    ESPUI.addControl(Label, "Outside Temperature", "", Wetasphalt, maintab, generalCallback);
   ESPUI.setElementStyle(tempLabel, styleBuff);
   aveTempLabel =    ESPUI.addControl(Label, "24 Hour Average Temperature", "", Wetasphalt, tempLabel, generalCallback);
-  
+
+
   signalLabel =  ESPUI.addControl(Label, "WiFi Signal Strength", "", Wetasphalt, maintab, generalCallback);
   ESPUI.setElementStyle(signalLabel, styleBuff);
   
@@ -49,6 +50,7 @@ void setUpUI() {
         ESPUI.updateLabel(timeLabel, timeClient.getFormattedTime());
        }
    });
+
 
   /*
    * Tab: Valve controls
@@ -82,17 +84,17 @@ void setUpUI() {
   button7Label = ESPUI.addControl(Button, "", "valve 7", Wetasphalt, groupbutton, valveButtonCallback);
   button8Label = ESPUI.addControl(Button, "", "valve 8", Wetasphalt, groupbutton, valveButtonCallback);
 #endif 
- // name buttons  ******************* this crashes ******************
+ //name buttons  ******************* this crashes ******************
 //  ESPUI.updateControlValue(button1Label, name1 );
 //  ESPUI.updateControlValue(button2Label, name2 );
 //  ESPUI.updateControlValue(button3Label, name3 );
 //  ESPUI.updateControlValue(button4Label, name4 );
-//#ifdef RELAY8
+// #ifdef RELAY8
 //  ESPUI.updateControlValue(button5Label, name5 );
 //  ESPUI.updateControlValue(button6Label, name6 );
 //  ESPUI.updateControlValue(button7Label, name7 );
 //  ESPUI.updateControlValue(button8Label, name8 ); 
-//#endif  
+// #endif  
 
 
 // valve names ----------------------------------------------------------------------------
@@ -147,7 +149,7 @@ void setUpUI() {
 
   //To label each slider in the group, we are going add additional labels and give them custom CSS styles
   //We need this CSS style rule, which will remove the label's background and ensure that it takes up the entire width of the panel
-  String clearLabelStyle = "background-color: unset; width: 100%;";
+   String clearLabelStyle = "background-color: unset; width: 100%;";
   //First we add the main slider to create a panel
   
   groupsliders = ESPUI.addControl(Slider, "Run Time (in seconds)", "600", Wetasphalt, grouptab, slideCallback);
@@ -261,9 +263,10 @@ void setUpUI() {
 //  request->send(200, "text/html", "<A HREF = \"http://192.168.0.74:8080/\">Rear Controller</A>");
 //  });
 
-   //Finally, start up the UI.
+  //Finally, start up the UI.
   //This should only be called once we are connected to WiFi.
   ESPUI.begin("Garden Watering System");
+
   // boot up message
   webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]); 
   getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
