@@ -11,14 +11,15 @@
 
 // ToDo:  display total monthly watering run time.  Link separate controllers.
 
-// Tested on ESP32 WROOM 32  and ESP12-F (esp8266)
+// Tested on ESP32 Wemos Lolin32  and ESP12-F (esp8266), make sure these match your board, 
+// otherwise strange results will occur.
 
 #include <Arduino.h>
 #include <ESPUI.h>
 
-#ifndef LED_BUILTIN
+//#ifndef LED_BUILTIN
 #define LED_BUILTIN 2
-#endif
+//#endif
 
 #if defined(ESP32)
 #include <WiFi.h>
@@ -210,7 +211,7 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
 #define BOOT_REASON_MESSAGE_SIZE 150
 char bootReasonMessage[BOOT_REASON_MESSAGE_SIZE];
 String bootTime;
-float avg_temp = 70.0;
+float avg_temp = 65;
 char IP[] = "xxx.xxx.xxx.xxx";  // IP address string
 extern void allOff();
 

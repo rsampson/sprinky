@@ -105,7 +105,7 @@ void controlRelays() {
     else {         // terminate cycle
       allOff();
       // print statistics
-      static String totalRunTime  = String ((millis() - start_time_ms) / 60000);
+      static String totalRunTime  = String (float(millis() - start_time_ms) / 60000);
       ESPUI.updateLabel(runtimeLabel, totalRunTime + " minutes");
       webPrint("Daily total run time is %s minutes\n", totalRunTime);
       runCycle = false;
@@ -119,13 +119,13 @@ void tempAdjRunTime(void) {
   static bool haveRun = false;
   
   time_t t = now(); // Store the current time atomically
-  //if (minute(t) == 0 && second(t) == 0 && haveRun == false) { // do once each hour
-  if ( second(t) == 0 && haveRun == false) { // do once each hour
+  if (minute(t) == 0 && second(t) == 0 && haveRun == false) { // do once each hour
      haveRun = true;
 
     // samples temp and computes the average of the last 24 hours
     dayBuffer.push(getTempF());
 
+    avg_temp = 0;
     // // the following ensures using the right type for the index variable
     using index_t = decltype(dayBuffer)::index_t;
     for (index_t i = 0; i < dayBuffer.size(); i++) {
@@ -142,6 +142,5 @@ void tempAdjRunTime(void) {
     webPrint("Average 24 hour temperature is %3.1f \n", avg_temp);
     webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
   }
-  //if (minute(t) == 0 && second(t) >= 1) haveRun = false;  // clear for run next hour
-  if ( second(t) >= 1) haveRun = false;  // clear for run next hour
+  if (minute(t) == 0 && second(t) >= 1) haveRun = false;  // clear for run next hour
 }

@@ -16,12 +16,12 @@ void setUpUI() {
    * Tab: Basic Controls
    * This tab contains all the basic ESPUI controls, and shows how to read and update them at runtime.
    *-----------------------------------------------------------------------------------------------------------*/
-
-  char styleBuff[30]; // temp buffer for css styles
   auto maintab = ESPUI.addControl(Tab, "", "System Status");
 
   timeLabel =    ESPUI.addControl(Label, "Current Time", "", Wetasphalt, maintab, generalCallback);
+
   // change lable font size
+  char styleBuff[30]; // temp buffer for css styles
   sprintf(styleBuff, "font-size: 25px;");
   ESPUI.setElementStyle(timeLabel, styleBuff);
 
@@ -42,7 +42,7 @@ void setUpUI() {
 
   mainSwitcher = ESPUI.addControl(Switcher, "Watering Disable", "0", Wetasphalt, maintab, switchCallback);
   
-  debugLabel =   ESPUI.addControl(Label, "Debug", "some message", Wetasphalt, maintab, generalCallback);
+  debugLabel =   ESPUI.addControl(Label, "Status/Debug", "some message", Wetasphalt, maintab, generalCallback);
   
    mainTime = ESPUI.addControl(Time, "", "", None, 0,
      [](Control *sender, int type) {
@@ -155,49 +155,50 @@ void setUpUI() {
   groupsliders = ESPUI.addControl(Slider, "Run Time (in seconds)", "600", Wetasphalt, grouptab, slideCallback);
   //Then we add a label and set its style to the clearLabelStyle
   slide1Label = ESPUI.addControl(Label, "", "valve 1", None, groupsliders);
-  ESPUI.setElementStyle(slide1Label, clearLabelStyle);
+  //ESPUI.setElementStyle(slide1Label, clearLabelStyle);
   ESPUI.addControl(Min, "", "1", None, groupsliders);
   ESPUI.addControl(Max, "", "600", None, groupsliders);
   
   slideID2 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
   slide2Label = ESPUI.addControl(Label, "", "valve 2", None, groupsliders);
-  ESPUI.setElementStyle(slide2Label, clearLabelStyle);
+  //ESPUI.setElementStyle(slide2Label, clearLabelStyle);
   ESPUI.addControl(Min, "", "1", None, slideID2);
   ESPUI.addControl(Max, "", "600", None, slideID2);
   
   slideID3 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
   slide3Label = ESPUI.addControl(Label, "", "valve 3", None, groupsliders);
-  ESPUI.setElementStyle(slide3Label, clearLabelStyle);
+  //ESPUI.setElementStyle(slide3Label, clearLabelStyle);
   ESPUI.addControl(Min, "", "1", None, slideID3);
   ESPUI.addControl(Max, "", "600", None, slideID3);
   
   slideID4 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
   slide4Label = ESPUI.addControl(Label, "", "valve 4", None, groupsliders);
-  ESPUI.setElementStyle(slide4Label, clearLabelStyle);
+  //ESPUI.setElementStyle(slide4Label, clearLabelStyle);
   ESPUI.addControl(Min, "", "1", None, slideID4);
   ESPUI.addControl(Max, "", "600", None, slideID4);
+
 #ifdef RELAY8  
   slideID5 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
   slide5Label = ESPUI.addControl(Label, "", "valve 5", None, groupsliders);
-  ESPUI.setElementStyle(slide5Label, clearLabelStyle);
+  //ESPUI.setElementStyle(slide5Label, clearLabelStyle);
   ESPUI.addControl(Min, "", "1", None, slideID5);
   ESPUI.addControl(Max, "", "600", None, slideID5);
   
   slideID6 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
   slide6Label = ESPUI.addControl(Label, "", "valve 6", None, groupsliders);
-  ESPUI.setElementStyle(slide6Label, clearLabelStyle);
+  //ESPUI.setElementStyle(slide6Label, clearLabelStyle);
   ESPUI.addControl(Min, "", "1", None, slideID6);
   ESPUI.addControl(Max, "", "600", None, slideID6);
 
   slideID7 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
   slide7Label = ESPUI.addControl(Label, "", "valve 7", None, groupsliders);
-  ESPUI.setElementStyle(slide7Label, clearLabelStyle);
+  //ESPUI.setElementStyle(slide7Label, clearLabelStyle);
   ESPUI.addControl(Min, "", "1", None, slideID7);
   ESPUI.addControl(Max, "", "600", None, slideID7);
   
   slideID8 = ESPUI.addControl(Slider, "", "600", None, groupsliders, slideCallback);
   slide8Label = ESPUI.addControl(Label, "", "valve 8", None, groupsliders);
-  ESPUI.setElementStyle(slide8Label, clearLabelStyle);
+  //ESPUI.setElementStyle(slide8Label, clearLabelStyle);
   ESPUI.addControl(Min, "", "1", None, slideID8);
   ESPUI.addControl(Max, "", "600", None, slideID8);
 #endif
