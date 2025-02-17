@@ -55,10 +55,6 @@ void relayOn(int relay_index) {
     relayEnabled[i] = (i == relay_index);
   }
   
-//  for (int k = 0; k < 10; k++)     { // make sure the damn thing is really on
-//    digitalWrite(relay[relay_index], ON);
-//  }
-  
    webPrint("Valve %1d on %s @ %s \n", relay_index + 1,  Days[weekday()], timeClient.getFormattedTime());
 }
 
@@ -109,11 +105,9 @@ void controlRelays() {
     else {         // terminate cycle
       allOff();
       // print statistics
-      // static String totalRunTime  = String ((millis() - start_time_ms) / 60000);
-      // ESPUI.updateLabel(runtimeLabel, totalRunTime + " minutes");
-      // webPrint("Daily total run time is %s minutes\n", totalRunTime);
-      webPrint("Average 24 hour temperature is %3.1f \n", avg_temp);
-      webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
+      static String totalRunTime  = String ((millis() - start_time_ms) / 60000);
+      ESPUI.updateLabel(runtimeLabel, totalRunTime + " minutes");
+      webPrint("Daily total run time is %s minutes\n", totalRunTime);
       runCycle = false;
     }
   }
@@ -125,27 +119,29 @@ void tempAdjRunTime(void) {
   static bool haveRun = false;
   
   time_t t = now(); // Store the current time atomically
-  if (minute(t) == 0 && second(t) == 0 && haveRun == false) { // do once each hour
-
+  //if (minute(t) == 0 && second(t) == 0 && haveRun == false) { // do once each hour
+  if ( second(t) == 0 && haveRun == false) { // do once each hour
      haveRun = true;
 
     // samples temp and computes the average of the last 24 hours
-    dayBuffer.push((float)getTempF());
+    dayBuffer.push(getTempF());
+
     // // the following ensures using the right type for the index variable
     using index_t = decltype(dayBuffer)::index_t;
-    
-
     for (index_t i = 0; i < dayBuffer.size(); i++) {
-      avg_temp += dayBuffer[i] ;
+      avg_temp += dayBuffer[i];
     }
-    if(!dayBuffer.isEmpty()) avg_temp = avg_temp /  dayBuffer.size();
+    avg_temp = avg_temp / dayBuffer.size();
     
-    ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: " + String(avg_temp) + " F");
     //expand watering time 0 to 2x over a 35-110 degree temp range
     //map it into milli seconds
     temp_adjust = map((int32_t)avg_temp, 35, 110, 1, 2000);
 
+  // report average temp and run time scaling adjustment
+    ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: "  + String(avg_temp) + " F");
+    webPrint("Average 24 hour temperature is %3.1f \n", avg_temp);
+    webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
   }
-  if (minute(t) == 0 && second(t) >= 1) haveRun = false;  // clear for run next hour
-
+  //if (minute(t) == 0 && second(t) >= 1) haveRun = false;  // clear for run next hour
+  if ( second(t) >= 1) haveRun = false;  // clear for run next hour
 }

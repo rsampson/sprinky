@@ -241,16 +241,21 @@ void setup() {
     Serial.println("!!temp sensor configuration failed!!");
   }
 #endif
-  dayBuffer.push(getTempF());  // prime average temperature buffer
+  dayBuffer.clear();
+  //avg_temp = getTempF();
 
   Serial.println("configuring Gui");
   setUpUI();
 
   disable = preferences.getBool("disable", "0");
   ESPUI.updateSwitcher(mainSwitcher, disable);
-  avg_temp = getTempF();
   ESPUI.updateLabel(aveTempLabel, "24 hour average temperature: " + String(avg_temp) + " F");
-  //ElegantOTA.begin(ESPUI.WebServer());
+
+  ElegantOTA.begin(ESPUI.WebServer());
+  // boot up message
+  // webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]); 
+  // getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
+  // webPrint("Reset reason: %s\n", bootReasonMessage);
 
   Serial.println("We Are Go!");
 }
@@ -262,7 +267,7 @@ void loop() {
   timer.tick();         // tick the timer (to shut down valve tests after two minutes)
   tempAdjRunTime();
   controlRelays();  // activate relay if correct time
-  //ElegantOTA.loop();
+  ElegantOTA.loop();
 
   if (millis() > previousTime + 1000) {                    // update gui once per second
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // toggle the LED
@@ -270,8 +275,7 @@ void loop() {
     ESPUI.updateLabel(debugLabel, String(charBuf));
     ESPUI.updateTime(mainTime);
     ESPUI.updateLabel(tempLabel, String(getTempF()) + " deg F");
-    //ESPUI.updateLabel(signalLabel, WiFi.RSSI() + " dbm");
-    //ESPUI.updateLabel(signalLabel, WiFi.RSSI());
+    ESPUI.updateLabel(signalLabel, String(WiFi.RSSI()) + " dbm");
     previousTime = millis();
   }
 #if !defined(ESP32)
@@ -314,6 +318,8 @@ void connectWifi() {
     IPAddress ip = WiFi.localIP();  // display ip address
     ip.toString().toCharArray(IP, 16);
     webPrint("Wifi up, IP address = %s \n", IP);
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dbm");
 
     if (!MDNS.begin(HOSTNAME)) {
       Serial.println("Error setting up MDNS responder!");

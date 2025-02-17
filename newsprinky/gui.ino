@@ -267,11 +267,6 @@ void setUpUI() {
   //This should only be called once we are connected to WiFi.
   ESPUI.begin("Garden Watering System");
 
-  // boot up message
-  webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]); 
-  getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
-  webPrint("Reset reason: %s\n", bootReasonMessage);
-
 
 #ifdef ESP8266
     } // HeapSelectIram

@@ -36,27 +36,6 @@ void webPrint(const char* format, ...)
   }
 }
 
-//void webPrint(const char* format, ...)
-//{
-//  char buffer[256];
-//  va_list args;
-//  va_start (args, format);
-//  vsprintf (buffer, format, args);
-//  Serial.print(buffer);
-//  // put formated string into circular buffer
-//  for (int i = 0; i < strlen(buffer); i++) 
-//  {
-//    if(!circBuff.push(buffer[i])) // if data was overwritten
-//    {
-//      // dump old data up untill first end of line
-//      while(circBuff.first() != '\n') {
-//        circBuff.shift();
-//      }
-//      circBuff.shift(); // get rid of \n
-//    }
-//  }
-//  va_end (args);
-//}
 
 
 void fetchDebugText() { // displays the recent operations/ debug info
