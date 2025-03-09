@@ -37,7 +37,6 @@ void webPrint(const char* format, ...)
 }
 
 
-
 void fetchDebugText() { // displays the recent operations/ debug info
   // read all of circular buffer into charBuff, it contains recent debug print out
   int qty = circBuff.size();

@@ -13,13 +13,15 @@
 
 // Tested on ESP32 Wemos Lolin32  and ESP12-F (esp8266), make sure these match your board, 
 // otherwise strange results will occur.
+//Settings
+#define HOSTNAME "sprinky2"
 
 #include <Arduino.h>
-#include <ESPUI.h>
-
-//#ifndef LED_BUILTIN
+#ifndef LED_BUILTIN
 #define LED_BUILTIN 2
-//#endif
+#endif
+
+
 
 #if defined(ESP32)
 #include <WiFi.h>
@@ -52,24 +54,22 @@
 #include <WiFiUdp.h>
 WiFiUDP ntpUDP;
 
-#include <NTPClient.h>         // for ntp time client
+#include <NTPClient.h>         // version 3.2.1 for ntp time client 
 NTPClient timeClient(ntpUDP);  //https://github.com/arduino-libraries/NTPClient/blob/master/NTPClient.h
 
 #include <Preferences.h>
 Preferences preferences;
 
-#include <arduino-timer.h>
+#include <arduino-timer.h>  // ver 3.0.1
 auto timer = timer_create_default();  // create a timer for auto shut down of valves
 
 #include <TimeLib.h>
-#include <ElegantOTA.h>
+#include <ElegantOTA.h>  // version 3.1.6 https://github.com/s00500/ESPUI
 
-#include <CircularBuffer.hpp>         // https://github.com/rlogiacco/CircularBuffer
+#include <CircularBuffer.hpp>         // version 1.4.0 https://github.com/rlogiacco/CircularBuffer
 CircularBuffer<float, 24> dayBuffer;  // store 24 hour temp samples
 
-//Settings
-#define HOSTNAME "testsprinky"
-
+#include <ESPUI.h>  // version 2.2.4  uses EsoAsyncWebServer 3.6.0, AsynchTCP version 3.35 WebSockets 2.6.1 and Arduinojson 6.21.5
 //Function Prototypes
 void connectWifi();
 void setUpUI();
@@ -84,9 +84,10 @@ void paramCallback(Control *sender, int type, int param);
 void slideCallback(Control *sender, int type);
 void tempAdjRunTime(void);
 void controlRelays(void);
+extern void allOff();
 
 //ESPUI=================================================================================================================
-#include <ESPUI.h>
+
 String stored_ssid, stored_pass, stored_hour, stored_minute;
 //UI handles
 uint16_t wifi_ssid_text, wifi_pass_text;
@@ -118,7 +119,7 @@ unsigned long runtime[8];  // valve on times in seconds
 #include <OneWire.h>
 #include <DallasTemperature.h>
 OneWire oneWire(TEMP_PIN);  // sensor hooked to TEMP_PIN
-DallasTemperature sensors(&oneWire);
+DallasTemperature sensors(&oneWire); // version 4.0.3 
 #endif
 
 int getTempF() {
@@ -139,6 +140,8 @@ int getTempF() {
 #endif
   return (tempF);
 }
+
+float avg_temp = 65;
 // temp stuff ***************************************************************
 
 String Days[] = {
@@ -211,9 +214,7 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
 #define BOOT_REASON_MESSAGE_SIZE 150
 char bootReasonMessage[BOOT_REASON_MESSAGE_SIZE];
 String bootTime;
-float avg_temp = 65;
 char IP[] = "xxx.xxx.xxx.xxx";  // IP address string
-extern void allOff();
 
 void setup() {
 
@@ -232,7 +233,7 @@ void setup() {
   timeClient.begin();                // set up ntp time client and then freewheeling time
   timeClient.setTimeOffset(-28800);  // UTC to pacific standard time
   timeClient.update();
-  setTime(timeClient.getEpochTime());  // todo: may need to do this periodically
+  setTime(timeClient.getEpochTime());  
 
 #ifdef DS18B20  // temp sensor
   sensors.begin();
@@ -243,8 +244,7 @@ void setup() {
   }
 #endif
   dayBuffer.clear();
-  //avg_temp = getTempF();
-
+ 
   Serial.println("configuring Gui");
   setUpUI();
 

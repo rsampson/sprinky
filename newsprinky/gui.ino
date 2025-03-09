@@ -265,8 +265,9 @@ void setUpUI() {
 //  });
 
   //Finally, start up the UI.
+  //char title[] = " Garden Watering System";
   //This should only be called once we are connected to WiFi.
-  ESPUI.begin("Garden Watering System");
+  ESPUI.begin(HOSTNAME);
 
 
 #ifdef ESP8266

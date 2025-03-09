@@ -6,20 +6,21 @@
 //  https://devices.esphome.io/devices/ESP32E-Relay-X8
 //  https://www.reddit.com/r/esp32/comments/1czys44/unable_to_program_esp32wroom32e_relay_board/
 // for 4 relay board: // https://xpart.org/how-to-use-the-dc-12v-esp8266-wifi-4-channel-relay-module-for-remote-control/
+
 #define ON HIGH
 #define OFF LOW
+
+#ifdef RELAY8
+#define NUM_RELAYS 8
+#else
+#define NUM_RELAYS 4
+#endif
 
 #ifdef  RELAY8     // if using a board with 8 relays
 // esp 32 relay ---- GPIO32, GPIO33, GPIO25, GPIO26, GPIO27, GPIO14, GPIO12 and GPIO13
 int relay[8] = {32, 33, 25, 26, 27, 14, 12, 13};
 #else              // else using board with 4 relays, data at:
 int relay[4] = {16, 14, 12, 13};
-#endif
-
-#ifdef RELAY8
-#define NUM_RELAYS 8
-#elif
-#define NUM_RELAYS 4
 #endif
 
 
@@ -108,6 +109,7 @@ void controlRelays() {
       static String totalRunTime  = String (float(millis() - start_time_ms) / 60000);
       ESPUI.updateLabel(runtimeLabel, totalRunTime + " minutes");
       webPrint("Daily total run time is %s minutes\n", totalRunTime);
+      webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
       runCycle = false;
     }
   }
@@ -139,8 +141,7 @@ void tempAdjRunTime(void) {
 
   // report average temp and run time scaling adjustment
     ESPUI.updateLabel(aveTempLabel,  "24 hour average temperature: "  + String(avg_temp) + " F");
-    webPrint("Average 24 hour temperature is %3.1f \n", avg_temp);
-    webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
+
   }
   if (minute(t) == 0 && second(t) >= 1) haveRun = false;  // clear for run next hour
 }
