@@ -43,12 +43,14 @@ void setUpUI() {
   mainSwitcher = ESPUI.addControl(Switcher, "Watering Disable", "0", Wetasphalt, maintab, switchCallback);
   
   debugLabel =   ESPUI.addControl(Label, "Status/Debug", "some message", Wetasphalt, maintab, generalCallback);
+
+  // This will recover time from the browser if not connected to the internet
   
    mainTime = ESPUI.addControl(Time, "", "", None, 0,
      [](Control *sender, int type) {
        if(type == TM_VALUE) { 
-        ESPUI.updateLabel(timeLabel, timeClient.getFormattedTime());
-       }
+        //ESPUI.updateLabel(timeLabel, timeClient.getFormattedTime());
+        ESPUI.updateLabel(timeLabel, sender->value);      }
    });
 
 
@@ -72,7 +74,7 @@ void setUpUI() {
   auto grouptab = ESPUI.addControl(Tab, "", "Valve Controls");
   ESPUI.addControl(Separator, "Valve Diagnostics (open valve for two minutes)", "", None, grouptab);
   //The parent of this button is a tab, so it will create a new panel with one control.
-  auto groupbutton = ESPUI.addControl(Button, "Valve Test", "valve 1", Wetasphalt, grouptab, valveButtonCallback);
+  groupbutton = ESPUI.addControl(Button, "Valve Test", "valve 1", Wetasphalt, grouptab, valveButtonCallback);
   //However the parent of this button is another control, so therefore no new panel is
   //created and the button is added to the existing panel.
   button2Label = ESPUI.addControl(Button, "", "valve 2", Wetasphalt, groupbutton, valveButtonCallback);

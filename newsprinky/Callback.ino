@@ -102,6 +102,10 @@ void valveButtonCallback(Control *sender, int type) {
     allOff();
     timer.cancel();
     runCycle = false;
+    // set button color to indicate activity
+    sprintf(stylecol2, "background-color: #03fc17;");
+    ESPUI.setElementStyle(sender->id, stylecol2);
+
     if      (sender->value == String( "valve 1")) relayOn(0);   
     else if (sender->value == String( "valve 2")) relayOn(1);
     else if (sender->value == String( "valve 3")) relayOn(2);

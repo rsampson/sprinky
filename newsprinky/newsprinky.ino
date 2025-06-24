@@ -11,10 +11,12 @@
 
 // ToDo:  display total monthly watering run time.  Link separate controllers.
 
-// Tested on ESP32 Wemos Lolin32  and ESP12-F (esp8266), make sure these match your board, 
+// Tested on ESP32 Wemos Lolin32  and ESP12-F (esp8266), make sure these match your board,
 // otherwise strange results will occur.
+// Also uses ESP Async WebServer 3.6.0 and Async TCP 3.3.5 other versions may not work
+
 //Settings
-#define HOSTNAME "sprinky2"
+#define HOSTNAME "testsprinky"
 
 #include <Arduino.h>
 #ifndef LED_BUILTIN
@@ -54,13 +56,14 @@
 #include <WiFiUdp.h>
 WiFiUDP ntpUDP;
 
-#include <NTPClient.h>         // version 3.2.1 for ntp time client 
+#include <NTPClient.h>         // version 3.2.1 for ntp time client
 NTPClient timeClient(ntpUDP);  //https://github.com/arduino-libraries/NTPClient/blob/master/NTPClient.h
+#include <Timezone.h>          // https://github.com/JChristensen/Timezone
 
 #include <Preferences.h>
 Preferences preferences;
 
-#include <arduino-timer.h>  // ver 3.0.1
+#include <arduino-timer.h>            // ver 3.0.1
 auto timer = timer_create_default();  // create a timer for auto shut down of valves
 
 #include <TimeLib.h>
@@ -111,15 +114,16 @@ char charBuf[bufferSize];
 
 bool disable = false;      // flag to disable/enable watering
 unsigned long runtime[8];  // valve on times in seconds
-
+// button color
+static char stylecol2[30]; 
 // temperature measuring stuff ********************************************
 #define DS18B20
 #ifdef DS18B20
 // sensor libraries
 #include <OneWire.h>
 #include <DallasTemperature.h>
-OneWire oneWire(TEMP_PIN);  // sensor hooked to TEMP_PIN
-DallasTemperature sensors(&oneWire); // version 4.0.3 
+OneWire oneWire(TEMP_PIN);            // sensor hooked to TEMP_PIN
+DallasTemperature sensors(&oneWire);  // version 4.0.3
 #endif
 
 int getTempF() {
@@ -211,6 +215,15 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
 #endif
 }
 
+time_t getNtpTime(void){  // return time zone and DST adjusted time from server
+  // US Pacific Time Zone (Las Vegas, Los Angeles)
+  TimeChangeRule usPDT = { "PDT", Second, Sun, Mar, 2, -420 };
+  TimeChangeRule usPST = { "PST", First, Sun, Nov, 2, -480 };
+  Timezone usPT(usPDT, usPST);  
+  time_t serv_time =   usPT.toLocal(timeClient.getEpochTime());
+  return(serv_time);
+}
+
 #define BOOT_REASON_MESSAGE_SIZE 150
 char bootReasonMessage[BOOT_REASON_MESSAGE_SIZE];
 String bootTime;
@@ -230,10 +243,12 @@ void setup() {
   }
   connectWifi();
 
-  timeClient.begin();                // set up ntp time client and then freewheeling time
-  timeClient.setTimeOffset(-28800);  // UTC to pacific standard time
+  timeClient.begin();   // set up ntp time client and then initialize time library
   timeClient.update();
-  setTime(timeClient.getEpochTime());  
+  // timeClient.setTimeOffset(25200);
+  setTime(getNtpTime());
+  setSyncProvider(getNtpTime);
+  setSyncInterval(300);  // sync time server every 5 minutes
 
 #ifdef DS18B20  // temp sensor
   sensors.begin();
@@ -244,7 +259,7 @@ void setup() {
   }
 #endif
   dayBuffer.clear();
- 
+
   Serial.println("configuring Gui");
   setUpUI();
 
@@ -254,14 +269,23 @@ void setup() {
 
   ElegantOTA.begin(ESPUI.WebServer());
   // boot up message
-  // webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]); 
+  // webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]);
   // getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
   // webPrint("Reset reason: %s\n", bootReasonMessage);
 
   Serial.println("We Are Go!");
 }
 
+void displayTime(void) {
+  char buf1[20];
+  time_t t = now();
+  sprintf(buf1, "%02d:%02d:%02d %02d/%02d",  hour(t), minute(t), second(t),  month(t), year(t)); 
+  ESPUI.updateLabel(timeLabel, buf1);
+}
+
+
 long unsigned previousTime;
+bool ap_mode = true;
 
 void loop() {
   timeClient.update();  // run ntp time client
@@ -274,9 +298,16 @@ void loop() {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // toggle the LED
     fetchDebugText();
     ESPUI.updateLabel(debugLabel, String(charBuf));
-    ESPUI.updateTime(mainTime);
     ESPUI.updateLabel(tempLabel, String(getTempF()) + " deg F");
     ESPUI.updateLabel(signalLabel, String(WiFi.RSSI()) + " dbm");
+
+    // determine how to find the source of time
+    if (ap_mode == false) {
+      displayTime();
+    } else {
+      ESPUI.updateTime(mainTime);  // get time from browser, we are not connect to the NTP server
+    }
+
     previousTime = millis();
   }
 #if !defined(ESP32)
@@ -284,6 +315,7 @@ void loop() {
   MDNS.update();
 #endif
 }
+
 
 void connectWifi() {
   int connect_timeout;
@@ -315,7 +347,7 @@ void connectWifi() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-
+    ap_mode = false;
     IPAddress ip = WiFi.localIP();  // display ip address
     ip.toString().toCharArray(IP, 16);
     webPrint("Wifi up, IP address = %s \n", IP);
@@ -326,6 +358,7 @@ void connectWifi() {
       Serial.println("Error setting up MDNS responder!");
     }
   } else {
+    ap_mode = true;
     Serial.println("\nCreating access point...");
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
