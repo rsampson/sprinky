@@ -43,7 +43,7 @@ bool shutOff(void*) {  // bool return and void* makes timer api happy
   allOff();
   timer.cancel();
   // reset button color to indicate inactivity
-  sprintf(stylecol2, "background-color: gray;");
+  sprintf(stylecol2, "background-color: silver;");
   ESPUI.setElementStyle(button1Label, stylecol2);
   ESPUI.setElementStyle(button2Label, stylecol2);
   ESPUI.setElementStyle(button3Label, stylecol2);
@@ -54,7 +54,7 @@ bool shutOff(void*) {  // bool return and void* makes timer api happy
   ESPUI.setElementStyle(button7Label, stylecol2);
   ESPUI.setElementStyle(button8Label, stylecol2);
 #endif
-  Serial.println("timer shut off ");
+   Serial.println("timer shut off ");
   return (false);
 }
 
@@ -64,26 +64,32 @@ void relayOn(int relay_index) {
 
   if (relayEnabled[relay_index] == true) return;  // only turn on if off
   allOff();
-  // "buzz" relay to avoid jammed valve
-  for (int j = 0; j < 10; j++) {
+
+  // "buzz" relay to clear jammed valve
+  for (int j = 0; j < 5; j++) {
     digitalWrite(relay[relay_index], ON);
-    delay(25);
+    delay(20);
     digitalWrite(relay[relay_index], OFF);
-    delay(25);
+    delay(20);
   }
 
+  uint16_t buttonID[] = {button1Label,button2Label,button3Label,button4Label,button5Label,button6Label,button7Label,button8Label};
   for (int i = 0; i < NUM_RELAYS; i++) {  // make sure only one relay is on at a time
     // turn relay on, all others off
     digitalWrite(relay[i], (i == relay_index) ? ON : OFF);
+    sprintf(stylecol2, (i == relay_index) ? "background-color: lime;" :  "background-color: silver;" );
+    //Serial.println(stylecol2);
+    ESPUI.setElementStyle((uint16_t)buttonID[i], stylecol2); // animate button
+    //Serial.println(buttonID[i]);
     relayEnabled[i] = (i == relay_index);
   }
+  
   time_t t = now();
-  webPrint("Valve %1d on %s @ %02d:%02d:%02d %02d/%02d \n",  relay_index + 1, Days[weekday()], hour(t), minute(t), second(t),  month(t), year(t)); 
-  // webPrint("Valve %1d on %s  @ %s \n", relay_index + 1, Days[weekday()], timeClient.getFormattedTime());
+  webPrint("Valve %1d on %s @ %02d:%02d:%02d %02d/%02d \n",  relay_index + 1, Days[weekday()], hour(t), minute(t), second(t),  month(t), day(t)); 
 }
 
 uint32_t start_time_ms = 0;
-uint32_t temp_adjust = 1000;  // scaled ms in second
+uint32_t temp_adjust;  // scaled ms in second (1000)
 
 // runtimes are in seconds, start times are in ms
 // temp_adjust has the sec to ms conversion factored in (temp adjust is in ms)
@@ -111,16 +117,15 @@ void controlRelays() {
     allOff();
     timer.cancel();  // cancel any manual operations
     start_time_ms = millis();
+
+    //expand watering time 0 to 2x over a 45-80 average degree temp range, map it into milli seconds
+    temp_adjust = map((int32_t)avg_temp, 45, 80, 1, 2000);
     runCycle = true;
   }
 
   if (runCycle == true) {  // run watering cycle if is time
 
-    //expand watering time 0 to 2x over a 35-110 degree temp range
-    //map it into milli seconds
-    temp_adjust = map((int32_t)avg_temp, 35, 110, 1, 2000);
-
-
+    timer.in(4800000, shutOff);  // for safety, turn off automatically after 80 min
     if (millis() >= START1 && millis() < START2) relayOn(0);
     else if (millis() >= START2 && millis() < START3) relayOn(1);
     else if (millis() >= START3 && millis() < START4) relayOn(2);
@@ -132,24 +137,25 @@ void controlRelays() {
     else if (millis() >= START8 && millis() < START9) relayOn(7);
 #endif
     else {  // terminate cycle
-      allOff();
+      void* garb;  // make call happy
+      shutOff(garb);
       // print statistics
-      static String totalRunTime = String(float(millis() - start_time_ms) / 60000);
+      String totalRunTime = String((millis() - start_time_ms) /60000);
       ESPUI.updateLabel(runtimeLabel, totalRunTime + " minutes");
-      webPrint("Daily total run time is %s minutes\n", totalRunTime);
+      //webPrint("Daily total run time is %s minutes\n", totalRunTime);
       webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
       runCycle = false;
     }
   }
 }
 
-bool haveRun = false;
-// compute an adjustment to run time based on average temperature
-void tempAdjRunTime(void) {
+bool haveRan = false;
+// compute average temperature
+void ComputeAveTemp(void) {
 
   time_t t = now();                                            // Store the current time atomically
-  if (minute(t) == 0 && second(t) == 0 && haveRun == false) {  // do once each hour
-    haveRun = true;
+  if (minute(t) == 0 && second(t) == 0 && haveRan == false) {  // do once each hour
+    haveRan = true;
 
     // samples temp and computes the average of the last 24 hours
     dayBuffer.push(getTempF());
@@ -157,18 +163,15 @@ void tempAdjRunTime(void) {
     avg_temp = 0;
     // // the following ensures using the right type for the index variable
     using index_t = decltype(dayBuffer)::index_t;
-    for (index_t i = 0; i < dayBuffer.size(); i++) {
+
+    for (index_t i = 0; i < dayBuffer.size(); i++) {  // compute 24 hour temp
       avg_temp += dayBuffer[i];
     }
     avg_temp = avg_temp / dayBuffer.size();
 
-    //expand watering time 0 to 2x over a 35-110 degree temp range
-    //map it into milli seconds
-    //temp_adjust = map((int32_t)avg_temp, 35, 110, 1, 2000);
-
     // report average temp and run time scaling adjustment
     ESPUI.updateLabel(aveTempLabel, "24 hour average temperature: " + String(avg_temp) + " F");
-    //webPrint("Run times scaled by %2d percent\n", temp_adjust / 10);
+    
 
-  } else if (minute(t) == 0 && second(t) == 2) haveRun = false;  // clear for run next hour
+  } else if (minute(t) == 0 && second(t) > 0) haveRan = false;  // clear for run next hour
 }

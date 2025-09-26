@@ -25,10 +25,20 @@ void textCallback(Control *sender, int type) {
 
 extern uint32_t start_time_ms;
 extern bool runCycle;
+extern uint32_t temp_adjust; 
 //Watering schedule settings callback========================================
 void RunCallback(Control *sender, int type) {
   if (type == B_UP) {
+    allOff();
+    timer.cancel();  // cancel any manual operations
     start_time_ms = millis();
+
+    temp_adjust = 1000;  // run at 4x speed for testing
+    // !!!!!!!!!!! hack for test only !!!!!!!!!!!!
+    //avg_temp = 80;  
+    //expand watering time 0 to 2x over a 35-110 degree temp range, map it into milli seconds
+    //temp_adjust = map((int32_t)avg_temp, 45, 85, 1, 2000);
+
     runCycle = true;   
   }
 }
@@ -67,18 +77,6 @@ void SaveScheduleCallback(Control *sender, int type) {
     preferences.putString("name8", ESPUI.getControl(valve8Label)->value); 
 #endif  
 
-////    // rename buttons  
-////    ESPUI.updateButton(button1Label, ESPUI.getControl(valve1Label)->value);
-////    ESPUI.updateButton(button2Label, ESPUI.getControl(valve2Label)->value);
-////    ESPUI.updateButton(button3Label, ESPUI.getControl(valve3Label)->value);
-////    ESPUI.updateButton(button4Label, ESPUI.getControl(valve4Label)->value);
-////#ifdef RELAY8
-////    ESPUI.updateButton(button5Label, ESPUI.getControl(valve5Label)->value);
-////    ESPUI.updateButton(button6Label, ESPUI.getControl(valve6Label)->value);
-////    ESPUI.updateButton(button7Label, ESPUI.getControl(valve7Label)->value);
-////    ESPUI.updateButton(button8Label, ESPUI.getControl(valve8Label)->value); 
-////#endif    
-
     // rename sliders  
     ESPUI.updateLabel(slide1Label, ESPUI.getControl(valve1Label)->value);
     ESPUI.updateLabel(slide2Label, ESPUI.getControl(valve2Label)->value);
@@ -99,12 +97,12 @@ void SaveScheduleCallback(Control *sender, int type) {
 // Valve control for test
 void valveButtonCallback(Control *sender, int type) {
   if (type == B_UP) {
-    allOff();
+
     timer.cancel();
     runCycle = false;
     // set button color to indicate activity
-    sprintf(stylecol2, "background-color: #03fc17;");
-    ESPUI.setElementStyle(sender->id, stylecol2);
+    //sprintf(stylecol2, "background-color: lime;");
+    //ESPUI.setElementStyle(sender->id, stylecol2);
 
     if      (sender->value == String( "valve 1")) relayOn(0);   
     else if (sender->value == String( "valve 2")) relayOn(1);

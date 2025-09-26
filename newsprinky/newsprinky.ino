@@ -11,18 +11,17 @@
 
 // ToDo:  display total monthly watering run time.  Link separate controllers.
 
-// Tested on ESP32 Wemos Lolin32  and ESP12-F (esp8266), make sure these match your board,
+// Tested on ESP32 Dev module  and ESP12-F (esp8266), make sure these match your board,
 // otherwise strange results will occur.
 // Also uses ESP Async WebServer 3.6.0 and Async TCP 3.3.5 other versions may not work
 
-//Settings
-#define HOSTNAME "testsprinky"
+//#define HOSTNAME "testsprinky"
+#define HOSTNAME "sprinky2"
 
 #include <Arduino.h>
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2
 #endif
-
 
 
 #if defined(ESP32)
@@ -85,7 +84,7 @@ void SaveWifiDetailsCallback(Control *sender, int type);
 void SaveSheduleCallback(Control *sender, int type);
 void paramCallback(Control *sender, int type, int param);
 void slideCallback(Control *sender, int type);
-void tempAdjRunTime(void);
+void ComputeAveTemp(void);
 void controlRelays(void);
 extern void allOff();
 
@@ -115,7 +114,7 @@ char charBuf[bufferSize];
 bool disable = false;      // flag to disable/enable watering
 unsigned long runtime[8];  // valve on times in seconds
 // button color
-static char stylecol2[30]; 
+char stylecol2[30]; 
 // temperature measuring stuff ********************************************
 #define DS18B20
 #ifdef DS18B20
@@ -138,9 +137,8 @@ int getTempF() {
 #else
   int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
   // map diode voltage to temperature F  ( diode mv values recorded from freezing and boiling water)
-  tempF = float(map(sensorValue, 640, 402, 32, 212));  // 1n914 diode @ .44 ma (10k / 5v)
-                                                       // Wemos mini devides by  .3125
-                                                       //tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
+  tempF = float(map(sensorValue, 640, 402, 32, 212));  // 1n914 diode @ .44 ma (10k / 5v), Wemos mini devides by  .3125
+  //tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
 #endif
   return (tempF);
 }
@@ -233,7 +231,8 @@ void setup() {
 
   Serial.begin(115200);
   relayConfig();
-  allOff();
+  allOff();  
+
   pinMode(LED_BUILTIN, OUTPUT);  // set heartbeat LED pin to OUTPUT
   digitalWrite(LED_BUILTIN, LOW);
 
@@ -269,9 +268,9 @@ void setup() {
 
   ElegantOTA.begin(ESPUI.WebServer());
   // boot up message
-  // webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]);
-  // getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
-  // webPrint("Reset reason: %s\n", bootReasonMessage);
+  webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]);
+  getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
+  webPrint("Reset reason: %s\n", bootReasonMessage);
 
   Serial.println("We Are Go!");
 }
@@ -279,7 +278,7 @@ void setup() {
 void displayTime(void) {
   char buf1[20];
   time_t t = now();
-  sprintf(buf1, "%02d:%02d:%02d %02d/%02d",  hour(t), minute(t), second(t),  month(t), year(t)); 
+  sprintf(buf1, "%02d:%02d:%02d %02d/%02d",  hour(t), minute(t), second(t),  month(t), day(t)); 
   ESPUI.updateLabel(timeLabel, buf1);
 }
 
@@ -290,7 +289,7 @@ bool ap_mode = true;
 void loop() {
   timeClient.update();  // run ntp time client
   timer.tick();         // tick the timer (to shut down valve tests after two minutes)
-  tempAdjRunTime();
+  ComputeAveTemp();
   controlRelays();  // activate relay if correct time
   ElegantOTA.loop();
 
@@ -357,6 +356,7 @@ void connectWifi() {
     if (!MDNS.begin(HOSTNAME)) {
       Serial.println("Error setting up MDNS responder!");
     }
+    MDNS.addService("http", "tcp", 80);
   } else {
     ap_mode = true;
     Serial.println("\nCreating access point...");
