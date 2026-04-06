@@ -15,14 +15,8 @@
 // otherwise strange results will occur.
 // Also uses ESP Async WebServer 3.6.0 and Async TCP 3.3.5 other versions may not work
 
-//#define HOSTNAME "testsprinky"
-#define HOSTNAME "sprinky2"
-
+#include "config.h"
 #include <Arduino.h>
-#ifndef LED_BUILTIN
-#define LED_BUILTIN 2
-#endif
-
 
 #if defined(ESP32)
 #include <WiFi.h>
@@ -52,6 +46,15 @@
 #endif
 #endif
 
+#include <ArduinoHA.h>
+#define BROKER_ADDR       IPAddress(192,168,0,223)
+WiFiClient client;
+HADevice device;
+HAMqtt mqtt(client, device);
+HASensorNumber analogSensor("FrontGardenTemperature", HASensorNumber::PrecisionP1);
+bool lastInputState1 = false;  // valve state
+HABinarySensor valve1("Valve1");
+
 #include <WiFiUdp.h>
 WiFiUDP ntpUDP;
 
@@ -74,18 +77,20 @@ CircularBuffer<float, 24> dayBuffer;  // store 24 hour temp samples
 #include <ESPUI.h>  // version 2.2.4  uses EsoAsyncWebServer 3.6.0, AsynchTCP version 3.35 WebSockets 2.6.1 and Arduinojson 6.21.5
 //Function Prototypes
 void connectWifi();
-void setUpUI();
-void textCallback(Control *sender, int type);
-void generalCallback(Control *sender, int type);
-void valveButtonCallback(Control *sender, int type);
-void hourCallback(Control *sender, int type);
-void minuteCallback(Control *sender, int type);
-void SaveWifiDetailsCallback(Control *sender, int type);
-void SaveSheduleCallback(Control *sender, int type);
-void paramCallback(Control *sender, int type, int param);
-void slideCallback(Control *sender, int type);
-void ComputeAveTemp(void);
-void controlRelays(void);
+extern void setUpUI();
+extern void textCallback(Control *sender, int type);
+extern void generalCallback(Control *sender, int type);
+extern void valveButtonCallback(Control *sender, int type);
+extern void hourCallback(Control *sender, int type);
+extern void minuteCallback(Control *sender, int type);
+extern void SaveWifiDetailsCallback(Control *sender, int type);
+extern void SaveSheduleCallback(Control *sender, int type);
+extern void paramCallback(Control *sender, int type, int param);
+extern void slideCallback(Control *sender, int type);
+extern void ComputeAveTemp(void);
+extern void controlRelays(void);
+extern void relayConfig();
+extern void webPrint(const char* format, ...);
 extern void allOff();
 
 //ESPUI=================================================================================================================
@@ -116,7 +121,7 @@ unsigned long runtime[8];  // valve on times in seconds
 // button color
 char stylecol2[30]; 
 // temperature measuring stuff ********************************************
-#define DS18B20
+
 #ifdef DS18B20
 // sensor libraries
 #include <OneWire.h>
@@ -140,6 +145,8 @@ int getTempF() {
   tempF = float(map(sensorValue, 640, 402, 32, 212));  // 1n914 diode @ .44 ma (10k / 5v), Wemos mini devides by  .3125
   //tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k / 5v)
 #endif
+  // report temperature to home assistant
+  analogSensor.setValue(tempF);
   return (tempF);
 }
 
@@ -213,19 +220,68 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
 #endif
 }
 
+// Australia Eastern Time Zone (Sydney, Melbourne)
+TimeChangeRule aEDT = {"AEDT", First, Sun, Oct, 2, 660};    // UTC + 11 hours
+TimeChangeRule aEST = {"AEST", First, Sun, Apr, 3, 600};    // UTC + 10 hours
+Timezone ausET(aEDT, aEST);
+
+// Moscow Standard Time (MSK, does not observe DST)
+TimeChangeRule msk = {"MSK", Last, Sun, Mar, 1, 180};
+Timezone tzMSK(msk);
+
+// Central European Time (Frankfurt, Paris)
+TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};     // Central European Summer Time
+TimeChangeRule CET = {"CET ", Last, Sun, Oct, 3, 60};       // Central European Standard Time
+Timezone CE(CEST, CET);
+
+// United Kingdom (London, Belfast)
+TimeChangeRule BST = {"BST", Last, Sun, Mar, 1, 60};        // British Summer Time
+TimeChangeRule GMT = {"GMT", Last, Sun, Oct, 2, 0};         // Standard Time
+Timezone UK(BST, GMT);
+
+// UTC
+TimeChangeRule utcRule = {"UTC", Last, Sun, Mar, 1, 0};     // UTC
+Timezone UTC(utcRule);
+
+// US Eastern Time Zone (New York, Detroit)
+TimeChangeRule usEDT = {"EDT", Second, Sun, Mar, 2, -240};  // Eastern Daylight Time = UTC - 4 hours
+TimeChangeRule usEST = {"EST", First, Sun, Nov, 2, -300};   // Eastern Standard Time = UTC - 5 hours
+Timezone usET(usEDT, usEST);
+
+// US Central Time Zone (Chicago, Houston)
+TimeChangeRule usCDT = {"CDT", Second, Sun, Mar, 2, -300};
+TimeChangeRule usCST = {"CST", First, Sun, Nov, 2, -360};
+Timezone usCT(usCDT, usCST);
+
+// US Mountain Time Zone (Denver, Salt Lake City)
+TimeChangeRule usMDT = {"MDT", Second, Sun, Mar, 2, -360};
+TimeChangeRule usMST = {"MST", First, Sun, Nov, 2, -420};
+Timezone usMT(usMDT, usMST);
+
+// Arizona is US Mountain Time Zone but does not use DST
+Timezone usAZ(usMST);
+
+// US Pacific Time Zone (Las Vegas, Los Angeles)
+TimeChangeRule usPDT = {"PDT", Second, Sun, Mar, 2, -420};
+TimeChangeRule usPST = {"PST", First, Sun, Nov, 2, -480};
+Timezone usPT(usPDT, usPST);
+
+Timezone* tz = &UTC;
+
 time_t getNtpTime(void){  // return time zone and DST adjusted time from server
   // US Pacific Time Zone (Las Vegas, Los Angeles)
-  TimeChangeRule usPDT = { "PDT", Second, Sun, Mar, 2, -420 };
-  TimeChangeRule usPST = { "PST", First, Sun, Nov, 2, -480 };
-  Timezone usPT(usPDT, usPST);  
-  time_t serv_time =   usPT.toLocal(timeClient.getEpochTime());
+  // TimeChangeRule usPDT = { "PDT", Second, Sun, Mar, 2, -420 };
+  // TimeChangeRule usPST = { "PST", First, Sun, Nov, 2, -480 };
+  // Timezone usPT(usPDT, usPST);  
+  time_t serv_time =   tz->toLocal(timeClient.getEpochTime());
   return(serv_time);
 }
 
-#define BOOT_REASON_MESSAGE_SIZE 150
+
 char bootReasonMessage[BOOT_REASON_MESSAGE_SIZE];
 String bootTime;
 char IP[] = "xxx.xxx.xxx.xxx";  // IP address string
+
 
 void setup() {
 
@@ -244,7 +300,11 @@ void setup() {
 
   timeClient.begin();   // set up ntp time client and then initialize time library
   timeClient.update();
-  // timeClient.setTimeOffset(25200);
+  if (not preferences.isKey("timezone")) {    // initialize to UTC if TZ hasn't been set yet
+    preferences.putBytes("timezone", tz, sizeof(Timezone*));
+  } else{
+    preferences.getBytes("timezone", tz, sizeof(Timezone*)); // set and store time zone selection
+  }
   setTime(getNtpTime());
   setSyncProvider(getNtpTime);
   setSyncInterval(300);  // sync time server every 5 minutes
@@ -272,6 +332,25 @@ void setup() {
   getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
   webPrint("Reset reason: %s\n", bootReasonMessage);
 
+    // Unique ID must be set!
+  byte mac[6];
+  WiFi.macAddress(mac);
+  device.setUniqueId(mac, sizeof(mac));
+  // set device's details (optional)
+  device.setName("Sprinkler Controller");
+  device.setSoftwareVersion("1.0.0");
+  // configure sensor (optional)
+  analogSensor.setIcon("mdi:thermometer");
+  analogSensor.setName("garden temperature");
+  analogSensor.setUnitOfMeasurement("F");
+
+  valve1.setCurrentState(lastInputState1);
+  valve1.setName("Sprinkler Valve 1");
+  valve1.setDeviceClass("switch");
+  valve1.setIcon("mdi:water-pump");
+
+  mqtt.begin(BROKER_ADDR, BROKER_USERNAME, BROKER_PASSWORD);
+
   Serial.println("We Are Go!");
 }
 
@@ -287,6 +366,8 @@ long unsigned previousTime;
 bool ap_mode = true;
 
 void loop() {
+  mqtt.loop();
+
   timeClient.update();  // run ntp time client
   timer.tick();         // tick the timer (to shut down valve tests after two minutes)
   ComputeAveTemp();
@@ -333,6 +414,7 @@ void connectWifi() {
 
   //Try to connect with stored credentials, fire up an access point if they don't work.
   Serial.println("Connecting to : " + stored_ssid);
+  WiFi.mode(WIFI_STA);
 #if defined(ESP32)
   WiFi.begin(stored_ssid.c_str(), stored_pass.c_str());
 #else
@@ -352,6 +434,8 @@ void connectWifi() {
     webPrint("Wifi up, IP address = %s \n", IP);
     Serial.print(WiFi.RSSI());
     Serial.println(" dbm");
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
 
     if (!MDNS.begin(HOSTNAME)) {
       Serial.println("Error setting up MDNS responder!");
@@ -364,6 +448,7 @@ void connectWifi() {
     WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
     WiFi.softAP(HOSTNAME);
   }
+
 #if defined(ESP32)
   WiFi.setSleep(false);  //For the ESP32: turn off sleeping to increase UI responsivness (at the cost of power use)
 #endif

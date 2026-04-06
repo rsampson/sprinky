@@ -228,26 +228,34 @@ void setUpUI() {
   ESPUI.addControl(Button, "Save Schedule/ Valve Names", "Save", Wetasphalt, grouptab, SaveScheduleCallback);
  
   /*
-   * Tab: WiFi Credentials
-   * You use this tab to enter the SSID and password of a wifi network to autoconnect to.
+   *Enter the SSID and password of a wifi network to autoconnect to, upload new code OTA.
    *-----------------------------------------------------------------------------------------------------------*/
-  auto wifitab = ESPUI.addControl(Tab, "", "WiFi Credentials");
-  wifi_ssid_text = ESPUI.addControl(Text, "SSID", "", Wetasphalt, wifitab, textCallback);
+  auto maintenancetab = ESPUI.addControl(Tab, "", "Setup and Maintenance");
+  wifi_ssid_text = ESPUI.addControl(Text, "SSID", "", Wetasphalt, maintenancetab, textCallback);
   //Note that adding a "Max" control to a text control sets the max length
   ESPUI.addControl(Max, "", "32", None, wifi_ssid_text);
-  wifi_pass_text = ESPUI.addControl(Text, "Password", "", Wetasphalt, wifitab, textCallback);
+  wifi_pass_text = ESPUI.addControl(Text, "Password", "", Wetasphalt, maintenancetab, textCallback);
   ESPUI.addControl(Max, "", "64", None, wifi_pass_text);
-  ESPUI.addControl(Button, "Save", "Save", Wetasphalt, wifitab, SaveWifiDetailsCallback);
+  ESPUI.addControl(Button, "Save", "Save", Wetasphalt, maintenancetab, SaveWifiDetailsCallback);
     
-  /*
-   * Tab:System Maintenance
-   * You use this tab to upload new code OTA, see ElegantOTA library doc
-   *-----------------------------------------------------------------------------------------------------------*/
-   auto maintenancetab = ESPUI.addControl(Tab, "", "System Maintenance");
-   auto updateButton =   ESPUI.addControl(Label, "Code Update", "<a href=\"/update\"> <button>Update</button></a>", Wetasphalt, maintenancetab, generalCallback); 
-   String clearLabelStyle = "background-color: unset; width: 100%;";
-   ESPUI.setElementStyle(updateButton , clearLabelStyle);
-   ESPUI.addControl(Button, "", "Reboot",  Wetasphalt,  updateButton, ESPReset);
+  auto updateButton =   ESPUI.addControl(Label, "Code Update", "<a href=\"/update\"> <button>Update</button></a>", Wetasphalt, maintenancetab, generalCallback); 
+  String clearLabelStyle = "background-color: unset; width: 100%;";
+  ESPUI.setElementStyle(updateButton , clearLabelStyle);
+  ESPUI.addControl(Button, "", "Reboot",  Wetasphalt,  updateButton, ESPReset);
+
+
+  uint16_t select1 = ESPUI.addControl(ControlType::Select, "Select Time Zone", "", ControlColor::Wetasphalt, maintenancetab, &TZcallback);
+  ESPUI.addControl(ControlType::Option, "Australia Eastern TZ", "AEST", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "Moscow", "MSK", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "Central European TZ", "CET", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "GMT", "GMT", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "UTC", "UTC", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "Eastern Standard Time", "EST", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "Central Standard Time", "CST", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "Mountain Standard Time", "MST", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "Arizona Time", "AZT", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "Pacific Standard Time", "PST", ControlColor::Wetasphalt, select1);
+
 
   // *********how to add an extended web page**********
 //  ESPUI.WebServer()->on("/narf", HTTP_GET, [](AsyncWebServerRequest *request) {

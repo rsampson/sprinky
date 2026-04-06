@@ -4,7 +4,7 @@
 #include <stdarg.h>
 #include <string.h>
 
-#define BUFFER_SIZE 256
+#define PRINT_BUFFER_SIZE 256
 
 // Create a circular buffer for debug output on web page
 CircularBuffer < char, (bufferSize - 4) > circBuff;
@@ -12,10 +12,10 @@ CircularBuffer < char, (bufferSize - 4) > circBuff;
 // write string into circular buffer for later printout on browser
 void webPrint(const char* format, ...)
 {
-  char buffer[BUFFER_SIZE];
+  char buffer[PRINT_BUFFER_SIZE];
   va_list args;
   va_start(args, format);
-  int len = vsnprintf(buffer, BUFFER_SIZE, format, args); 
+  int len = vsnprintf(buffer, PRINT_BUFFER_SIZE, format, args); 
   va_end(args);
   
   if(len < 0){

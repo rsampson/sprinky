@@ -33,12 +33,7 @@ void RunCallback(Control *sender, int type) {
     timer.cancel();  // cancel any manual operations
     start_time_ms = millis();
 
-    temp_adjust = 1000;  // run at 4x speed for testing
-    // !!!!!!!!!!! hack for test only !!!!!!!!!!!!
-    //avg_temp = 80;  
-    //expand watering time 0 to 2x over a 35-110 degree temp range, map it into milli seconds
-    //temp_adjust = map((int32_t)avg_temp, 45, 85, 1, 2000);
-
+    //temp_adjust = 1000;  // run at 4x speed for testing
     runCycle = true;   
   }
 }
@@ -182,6 +177,32 @@ void SaveWifiDetailsCallback(Control *sender, int type) {
   }
 }
 //WiFi settings callback=====================================================
+
+//Time Zone settings callback=====================================================
+
+void TZcallback(Control* sender, int value)
+{
+    Serial.print("Select: ID: ");
+    Serial.print(sender->id);
+    Serial.print(", Value: ");
+    Serial.println(sender->value);
+
+    if      (sender->value == String( "AEST")) tz = &ausET;   
+    else if (sender->value == String( "MSK")) tz = &tzMSK;
+    else if (sender->value == String( "CE")) tz = &CE;
+    else if (sender->value == String( "GMT")) tz = &UK;
+    else if (sender->value == String( "UTC")) tz = &UTC;
+    else if (sender->value == String( "EST")) tz = &usET;
+    else if (sender->value == String( "CST")) tz = &usCT;
+    else if (sender->value == String( "MST")) tz = &usMT;
+    else if (sender->value == String( "AZT")) tz = &usAZ;
+    else if (sender->value == String( "PST")) tz = &usPT;
+    
+
+    preferences.putBytes("timezone", tz, sizeof(Timezone*)); // set and store time zone selection
+    setTime(getNtpTime());
+}
+//Time Zone settings callback=====================================================
 
 
 //ESP Reset=================================

@@ -7,20 +7,19 @@
 //  https://www.reddit.com/r/esp32/comments/1czys44/unable_to_program_esp32wroom32e_relay_board/
 // for 4 relay board: // https://xpart.org/how-to-use-the-dc-12v-esp8266-wifi-4-channel-relay-module-for-remote-control/
 
-#define ON HIGH
-#define OFF LOW
+
 
 #ifdef RELAY8
-#define NUM_RELAYS 8
+static constexpr uint8_t NUM_RELAYS = 8;
 #else
-#define NUM_RELAYS 4
+static constexpr uint8_t NUM_RELAYS = 4;
 #endif
 
 #ifdef RELAY8  // if using a board with 8 relays
 // esp 32 relay ---- GPIO32, GPIO33, GPIO25, GPIO26, GPIO27, GPIO14, GPIO12 and GPIO13
-int relay[8] = { 32, 33, 25, 26, 27, 14, 12, 13 };
+static const uint8_t  relay[NUM_RELAYS] = { 32, 33, 25, 26, 27, 14, 12, 13 };
 #else  // else using board with 4 relays, data at:
-int relay[4] = { 16, 14, 12, 13 };
+static const uint8_t  relay[NUM_RELAYS = { 16, 14, 12, 13 };
 #endif
 
 
@@ -48,6 +47,10 @@ bool shutOff(void*) {  // bool return and void* makes timer api happy
   ESPUI.setElementStyle(button2Label, stylecol2);
   ESPUI.setElementStyle(button3Label, stylecol2);
   ESPUI.setElementStyle(button4Label, stylecol2);
+
+  valve1.setState(false);
+  lastInputState1 = valve1.getCurrentState();
+
 #ifdef RELAY8
   ESPUI.setElementStyle(button5Label, stylecol2);
   ESPUI.setElementStyle(button6Label, stylecol2);
@@ -82,6 +85,10 @@ void relayOn(int relay_index) {
     ESPUI.setElementStyle((uint16_t)buttonID[i], stylecol2); // animate button
     //Serial.println(buttonID[i]);
     relayEnabled[i] = (i == relay_index);
+    if (relay_index == 0){
+      valve1.setState(true);
+      lastInputState1 = valve1.getCurrentState();
+    }
   }
   
   time_t t = now();
