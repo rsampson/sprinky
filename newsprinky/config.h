@@ -6,6 +6,7 @@
 #define LED_BUILTIN 2
 #endif
 
+//#define ERASE_FLASH
 #define DS18B20
 #define BOOT_REASON_MESSAGE_SIZE 150
 #define ON HIGH

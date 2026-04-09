@@ -40,7 +40,7 @@ void setUpUI() {
   runtimeLabel =  ESPUI.addControl(Label, "Daily Total Run Time", "", Wetasphalt, maintab, generalCallback);
   ESPUI.setElementStyle(runtimeLabel, styleBuff);
 
-  mainSwitcher = ESPUI.addControl(Switcher, "Watering Disable", "0", Wetasphalt, maintab, switchCallback);
+  mainSwitcher = ESPUI.addControl(Switcher, "Watering on/off", "0", Wetasphalt, maintab, switchCallback);
   
   debugLabel =   ESPUI.addControl(Label, "Status/Debug", "some message", Wetasphalt, maintab, generalCallback);
 
@@ -249,13 +249,13 @@ void setUpUI() {
   ESPUI.addControl(ControlType::Option, "Moscow", "MSK", ControlColor::Wetasphalt, select1);
   ESPUI.addControl(ControlType::Option, "Central European TZ", "CET", ControlColor::Wetasphalt, select1);
   ESPUI.addControl(ControlType::Option, "GMT", "GMT", ControlColor::Wetasphalt, select1);
-  ESPUI.addControl(ControlType::Option, "UTC", "UTC", ControlColor::Wetasphalt, select1);
+  ESPUI.addControl(ControlType::Option, "Universal Time", "UTC", ControlColor::Wetasphalt, select1);
   ESPUI.addControl(ControlType::Option, "Eastern Standard Time", "EST", ControlColor::Wetasphalt, select1);
   ESPUI.addControl(ControlType::Option, "Central Standard Time", "CST", ControlColor::Wetasphalt, select1);
   ESPUI.addControl(ControlType::Option, "Mountain Standard Time", "MST", ControlColor::Wetasphalt, select1);
   ESPUI.addControl(ControlType::Option, "Arizona Time", "AZT", ControlColor::Wetasphalt, select1);
   ESPUI.addControl(ControlType::Option, "Pacific Standard Time", "PST", ControlColor::Wetasphalt, select1);
-
+  TimeZoneLabel = ESPUI.addControl(Label, "Currently Selected Time Zone", "", ControlColor::Wetasphalt,  maintenancetab);
 
   // *********how to add an extended web page**********
 //  ESPUI.WebServer()->on("/narf", HTTP_GET, [](AsyncWebServerRequest *request) {

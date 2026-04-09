@@ -47,13 +47,21 @@
 #endif
 
 #include <ArduinoHA.h>
-#define BROKER_ADDR       IPAddress(192,168,0,223)
+#define ARDUINOHA_DEBUG
+#define BROKER_ADDR IPAddress(192, 168, 0, 223)
 WiFiClient client;
 HADevice device;
 HAMqtt mqtt(client, device);
 HASensorNumber analogSensor("FrontGardenTemperature", HASensorNumber::PrecisionP1);
-bool lastInputState1 = false;  // valve state
-HABinarySensor valve1("Valve1");
+HAButton button1("valve1");
+HAButton button2("valve2");
+HAButton button3("valve3");
+HAButton button4("valve4");
+HAButton button5("valve5");
+HAButton button6("valve6");
+HAButton button7("valve7");
+HAButton button8("valve8");
+HASwitch switch1("disableSwitch");  // to turn the stand alone watering controller off
 
 #include <WiFiUdp.h>
 WiFiUDP ntpUDP;
@@ -62,6 +70,9 @@ WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);  //https://github.com/arduino-libraries/NTPClient/blob/master/NTPClient.h
 #include <Timezone.h>          // https://github.com/JChristensen/Timezone
 
+#ifdef ERASE_FLASH
+#include <nvs_flash.h>
+#endif
 #include <Preferences.h>
 Preferences preferences;
 
@@ -90,7 +101,7 @@ extern void slideCallback(Control *sender, int type);
 extern void ComputeAveTemp(void);
 extern void controlRelays(void);
 extern void relayConfig();
-extern void webPrint(const char* format, ...);
+extern void webPrint(const char *format, ...);
 extern void allOff();
 
 //ESPUI=================================================================================================================
@@ -106,6 +117,7 @@ uint16_t slide1Label, slide2Label, slide3Label, slide4Label, slide5Label, slide6
 uint16_t aveTempLabel, runtimeLabel, mainSwitcher, mainText, mainTime;
 uint16_t hourNumber, minuteNumber;
 uint16_t groupsliders;
+uint16_t TimeZoneLabel;
 #define slideID1 groupsliders
 uint16_t slideID2, slideID3, slideID4, slideID5, slideID6, slideID7, slideID8;
 // Input values
@@ -119,7 +131,7 @@ char charBuf[bufferSize];
 bool disable = false;      // flag to disable/enable watering
 unsigned long runtime[8];  // valve on times in seconds
 // button color
-char stylecol2[30]; 
+char stylecol2[30];
 // temperature measuring stuff ********************************************
 
 #ifdef DS18B20
@@ -221,60 +233,56 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
 }
 
 // Australia Eastern Time Zone (Sydney, Melbourne)
-TimeChangeRule aEDT = {"AEDT", First, Sun, Oct, 2, 660};    // UTC + 11 hours
-TimeChangeRule aEST = {"AEST", First, Sun, Apr, 3, 600};    // UTC + 10 hours
+TimeChangeRule aEDT = { "AEDT", First, Sun, Oct, 2, 660 };  // UTC + 11 hours
+TimeChangeRule aEST = { "AEST", First, Sun, Apr, 3, 600 };  // UTC + 10 hours
 Timezone ausET(aEDT, aEST);
 
 // Moscow Standard Time (MSK, does not observe DST)
-TimeChangeRule msk = {"MSK", Last, Sun, Mar, 1, 180};
+TimeChangeRule msk = { "MSK", Last, Sun, Mar, 1, 180 };
 Timezone tzMSK(msk);
 
 // Central European Time (Frankfurt, Paris)
-TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};     // Central European Summer Time
-TimeChangeRule CET = {"CET ", Last, Sun, Oct, 3, 60};       // Central European Standard Time
+TimeChangeRule CEST = { "CEST", Last, Sun, Mar, 2, 120 };  // Central European Summer Time
+TimeChangeRule CET = { "CET ", Last, Sun, Oct, 3, 60 };    // Central European Standard Time
 Timezone CE(CEST, CET);
 
 // United Kingdom (London, Belfast)
-TimeChangeRule BST = {"BST", Last, Sun, Mar, 1, 60};        // British Summer Time
-TimeChangeRule GMT = {"GMT", Last, Sun, Oct, 2, 0};         // Standard Time
+TimeChangeRule BST = { "BST", Last, Sun, Mar, 1, 60 };  // British Summer Time
+TimeChangeRule GMT = { "GMT", Last, Sun, Oct, 2, 0 };   // Standard Time
 Timezone UK(BST, GMT);
 
 // UTC
-TimeChangeRule utcRule = {"UTC", Last, Sun, Mar, 1, 0};     // UTC
+TimeChangeRule utcRule = { "UTC", Last, Sun, Mar, 1, 0 };  // UTC
 Timezone UTC(utcRule);
 
 // US Eastern Time Zone (New York, Detroit)
-TimeChangeRule usEDT = {"EDT", Second, Sun, Mar, 2, -240};  // Eastern Daylight Time = UTC - 4 hours
-TimeChangeRule usEST = {"EST", First, Sun, Nov, 2, -300};   // Eastern Standard Time = UTC - 5 hours
+TimeChangeRule usEDT = { "EDT", Second, Sun, Mar, 2, -240 };  // Eastern Daylight Time = UTC - 4 hours
+TimeChangeRule usEST = { "EST", First, Sun, Nov, 2, -300 };   // Eastern Standard Time = UTC - 5 hours
 Timezone usET(usEDT, usEST);
 
 // US Central Time Zone (Chicago, Houston)
-TimeChangeRule usCDT = {"CDT", Second, Sun, Mar, 2, -300};
-TimeChangeRule usCST = {"CST", First, Sun, Nov, 2, -360};
+TimeChangeRule usCDT = { "CDT", Second, Sun, Mar, 2, -300 };
+TimeChangeRule usCST = { "CST", First, Sun, Nov, 2, -360 };
 Timezone usCT(usCDT, usCST);
 
 // US Mountain Time Zone (Denver, Salt Lake City)
-TimeChangeRule usMDT = {"MDT", Second, Sun, Mar, 2, -360};
-TimeChangeRule usMST = {"MST", First, Sun, Nov, 2, -420};
+TimeChangeRule usMDT = { "MDT", Second, Sun, Mar, 2, -360 };
+TimeChangeRule usMST = { "MST", First, Sun, Nov, 2, -420 };
 Timezone usMT(usMDT, usMST);
 
 // Arizona is US Mountain Time Zone but does not use DST
 Timezone usAZ(usMST);
 
 // US Pacific Time Zone (Las Vegas, Los Angeles)
-TimeChangeRule usPDT = {"PDT", Second, Sun, Mar, 2, -420};
-TimeChangeRule usPST = {"PST", First, Sun, Nov, 2, -480};
+TimeChangeRule usPDT = { "PDT", Second, Sun, Mar, 2, -420 };
+TimeChangeRule usPST = { "PST", First, Sun, Nov, 2, -480 };
 Timezone usPT(usPDT, usPST);
 
-Timezone* tz = &UTC;
+Timezone *tz = &usPT;
 
-time_t getNtpTime(void){  // return time zone and DST adjusted time from server
-  // US Pacific Time Zone (Las Vegas, Los Angeles)
-  // TimeChangeRule usPDT = { "PDT", Second, Sun, Mar, 2, -420 };
-  // TimeChangeRule usPST = { "PST", First, Sun, Nov, 2, -480 };
-  // Timezone usPT(usPDT, usPST);  
-  time_t serv_time =   tz->toLocal(timeClient.getEpochTime());
-  return(serv_time);
+time_t getNtpTime(void) {  // return time zone and DST adjusted time from server
+  time_t serv_time = tz->toLocal(timeClient.getEpochTime());
+  return (serv_time);
 }
 
 
@@ -282,12 +290,72 @@ char bootReasonMessage[BOOT_REASON_MESSAGE_SIZE];
 String bootTime;
 char IP[] = "xxx.xxx.xxx.xxx";  // IP address string
 
+void onButtonCommand(HAButton *sender) {
+  if (sender == &button1) relayOn(0);
+  else if (sender == &button2) relayOn(1);
+  else if (sender == &button3) relayOn(2);
+  else if (sender == &button4) relayOn(3);
+  else if (sender == &button5) relayOn(4);
+  else if (sender == &button6) relayOn(5);
+  else if (sender == &button7) relayOn(6);
+  else if (sender == &button8) relayOn(7);
+  timer.in(60000, shutOff);  // turn off any manually activated valve after a minute
+}
+
+void onSwitchCommand(bool state, HASwitch *sender) {
+  if (sender == &switch1) {
+    // the switch1 has been toggled
+    // state == true means ON state
+    switch (state)
+    {
+    case true:
+        disable = false;
+        ESPUI.updateControlLabel(mainSwitcher, "Watering on");     
+        preferences.putBool("disable", true);
+        break;
+
+    case false:
+        disable = true;
+        ESPUI.updateControlLabel(mainSwitcher, "Watering off");     
+        preferences.putBool("disable", false);
+        break;
+    }
+  } 
+  sender->setState(state);  // report state back to the Home Assistant
+}
+
+
+void printTZ(Timezone *tzone) {
+    String TZS;
+
+    if  (tzone == &ausET) TZS = "Australia Eastern" ;
+    else if (tzone == &tzMSK) TZS = "Moscow";
+    else if (tzone == &CE) TZS = "Central European";
+    else if (tzone == &UK) TZS = "British Standard";
+    else if (tzone == &UTC) TZS = "Universal";
+    else if (tzone == &usET) TZS = "Eastern Standard";
+    else if (tzone == &usCT) TZS = "Central Standard";
+    else if (tzone == &usMT) TZS = "Mountain Standard";
+    else if (tzone == &usAZ) TZS = "Arizona";
+    else if (tzone == &usPT) TZS = "Pacific Standard";
+    else TZS = "Unknown TZ";
+
+    TZS = TZS + " Time";
+    Serial.println(TZS);
+    ESPUI.updateControlValue(TimeZoneLabel, TZS); 
+  }
 
 void setup() {
 
+#ifdef ERASE_FLASH
+  nvs_flash_erase(); // erase the NVS partition and...
+  nvs_flash_init(); // initialize the NVS partition.
+#endif
+
   Serial.begin(115200);
+  Serial.setDebugOutput(true);
   relayConfig();
-  allOff();  
+  allOff();
 
   pinMode(LED_BUILTIN, OUTPUT);  // set heartbeat LED pin to OUTPUT
   digitalWrite(LED_BUILTIN, LOW);
@@ -298,17 +366,20 @@ void setup() {
   }
   connectWifi();
 
-  timeClient.begin();   // set up ntp time client and then initialize time library
+  timeClient.begin();  // set up ntp time client and then initialize time library
   timeClient.update();
-  if (not preferences.isKey("timezone")) {    // initialize to UTC if TZ hasn't been set yet
-    preferences.putBytes("timezone", tz, sizeof(Timezone*));
-  } else{
-    preferences.getBytes("timezone", tz, sizeof(Timezone*)); // set and store time zone selection
+
+  if (preferences.isKey("timezone")) {  // initialize to UTC if TZ hasn't been set yet
+     preferences.getBytes("timezone", tz, sizeof(Timezone *));  // set and store time zone selection
+     Serial.println("Time Zone recovered from NVM");
+  } else {
+     preferences.putBytes("timezone", &UTC, sizeof(Timezone *));
+     Serial.println("Initialize Time Zone to UTC"); 
   }
   setTime(getNtpTime());
   setSyncProvider(getNtpTime);
   setSyncInterval(300);  // sync time server every 5 minutes
-
+ 
 #ifdef DS18B20  // temp sensor
   sensors.begin();
   if (sensors.getDeviceCount() != 0) {
@@ -322,32 +393,67 @@ void setup() {
   Serial.println("configuring Gui");
   setUpUI();
 
+  printTZ(tz);
+
   disable = preferences.getBool("disable", "0");
   ESPUI.updateSwitcher(mainSwitcher, disable);
   ESPUI.updateLabel(aveTempLabel, "24 hour average temperature: " + String(avg_temp) + " F");
 
   ElegantOTA.begin(ESPUI.WebServer());
   // boot up message
-  webPrint( "%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]);
+  webPrint("%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(), Days[weekday()]);
   getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
   webPrint("Reset reason: %s\n", bootReasonMessage);
 
-    // Unique ID must be set!
+  // Unique ID must be set!
   byte mac[6];
   WiFi.macAddress(mac);
   device.setUniqueId(mac, sizeof(mac));
   // set device's details (optional)
   device.setName("Sprinkler Controller");
-  device.setSoftwareVersion("1.0.0");
+  device.enableSharedAvailability();
+  device.enableLastWill();
   // configure sensor (optional)
   analogSensor.setIcon("mdi:thermometer");
   analogSensor.setName("garden temperature");
   analogSensor.setUnitOfMeasurement("F");
 
-  valve1.setCurrentState(lastInputState1);
-  valve1.setName("Sprinkler Valve 1");
-  valve1.setDeviceClass("switch");
-  valve1.setIcon("mdi:water-pump");
+  button1.setIcon("mdi:water-pump");
+  button1.setName("Valve1");
+  button1.onCommand(onButtonCommand);
+
+  button2.setIcon("mdi:water-pump");
+  button2.setName("Valve2");
+  button2.onCommand(onButtonCommand);
+
+  button3.setIcon("mdi:water-pump");
+  button3.setName("Valve3");
+  button3.onCommand(onButtonCommand);
+
+  button4.setIcon("mdi:water-pump");
+  button4.setName("Valve4");
+  button4.onCommand(onButtonCommand);
+
+  button5.setIcon("mdi:water-pump");
+  button5.setName("Valve5");
+  button5.onCommand(onButtonCommand);
+
+  button6.setIcon("mdi:water-pump");
+  button6.setName("Valve6");
+  button6.onCommand(onButtonCommand);
+
+  button7.setIcon("mdi:water-pump");
+  button7.setName("Valve7");
+  button7.onCommand(onButtonCommand);
+
+  button8.setIcon("mdi:water-pump");
+  button8.setName("Valve8");
+  button8.onCommand(onButtonCommand);
+
+  switch1.setName("Disable watering controller");
+  switch1.setIcon("mdi:lightbulb");
+  switch1.onCommand(onSwitchCommand);
+
 
   mqtt.begin(BROKER_ADDR, BROKER_USERNAME, BROKER_PASSWORD);
 
@@ -357,7 +463,7 @@ void setup() {
 void displayTime(void) {
   char buf1[20];
   time_t t = now();
-  sprintf(buf1, "%02d:%02d:%02d %02d/%02d",  hour(t), minute(t), second(t),  month(t), day(t)); 
+  sprintf(buf1, "%02d:%02d:%02d %02d/%02d", hour(t), minute(t), second(t), month(t), day(t));
   ESPUI.updateLabel(timeLabel, buf1);
 }
 

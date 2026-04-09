@@ -12,12 +12,12 @@ void generalCallback(Control *sender, int type) {
 }
 
 // The extended param can be used to pass additional information
-void paramCallback(Control* sender, int type, int param)
-{
-  generalCallback(sender, type);
-  Serial.print("param = ");
-  Serial.println(param);
-}
+// void paramCallback(Control* sender, int type, int param)
+// {
+//   generalCallback(sender, type);
+//   Serial.print("param = ");
+//   Serial.println(param);
+// }
 
 void textCallback(Control *sender, int type) {
   //This callback is needed to handle the changed values, even though it doesn't do anything itself.
@@ -156,10 +156,12 @@ void switchCallback(Control* sender, int type)
     case S_ACTIVE:
         disable = true;
         preferences.putBool("disable", true);
+        ESPUI.updateControlLabel(mainSwitcher, "Watering off");
         break;
 
     case S_INACTIVE:
         disable = false;
+        ESPUI.updateControlLabel(mainSwitcher, "Watering on");       
         preferences.putBool("disable", false);
         break;
     }
@@ -180,13 +182,8 @@ void SaveWifiDetailsCallback(Control *sender, int type) {
 
 //Time Zone settings callback=====================================================
 
-void TZcallback(Control* sender, int value)
+void TZcallback(Control* sender, int type)
 {
-    Serial.print("Select: ID: ");
-    Serial.print(sender->id);
-    Serial.print(", Value: ");
-    Serial.println(sender->value);
-
     if      (sender->value == String( "AEST")) tz = &ausET;   
     else if (sender->value == String( "MSK")) tz = &tzMSK;
     else if (sender->value == String( "CE")) tz = &CE;
@@ -197,10 +194,15 @@ void TZcallback(Control* sender, int value)
     else if (sender->value == String( "MST")) tz = &usMT;
     else if (sender->value == String( "AZT")) tz = &usAZ;
     else if (sender->value == String( "PST")) tz = &usPT;
+    else Serial.println("Bad TZ selection");
     
 
     preferences.putBytes("timezone", tz, sizeof(Timezone*)); // set and store time zone selection
+    preferences.getBytes("timezone", tz, sizeof(Timezone*)); 
+    printTZ(tz);
     setTime(getNtpTime());
+
+    generalCallback(sender, type);
 }
 //Time Zone settings callback=====================================================
 
