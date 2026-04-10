@@ -278,7 +278,7 @@ TimeChangeRule usPDT = { "PDT", Second, Sun, Mar, 2, -420 };
 TimeChangeRule usPST = { "PST", First, Sun, Nov, 2, -480 };
 Timezone usPT(usPDT, usPST);
 
-Timezone *tz = &usPT;
+Timezone *tz = &UTC;
 
 time_t getNtpTime(void) {  // return time zone and DST adjusted time from server
   time_t serv_time = tz->toLocal(timeClient.getEpochTime());
@@ -345,6 +345,24 @@ void printTZ(Timezone *tzone) {
     ESPUI.updateControlValue(TimeZoneLabel, TZS); 
   }
 
+Timezone * TZstringToPointer(String tzstring) {
+
+    if      (tzstring == "AEST")return(&ausET);   
+    else if (tzstring == "MSK") return(&tzMSK);
+    else if (tzstring == "CE")  return(&CE);
+    else if (tzstring == "GMT") return(&UK);
+    else if (tzstring == "UTC") return(&UTC);
+    else if (tzstring == "EST") return(&usET);
+    else if (tzstring == "CST") return(&usCT);
+    else if (tzstring == "MST") return(&usMT);
+    else if (tzstring == "AZT") return(&usAZ);
+    else if (tzstring == "PST") return(&usPT);
+    else {
+      Serial.println("Bad TZ selection");
+      return(&UTC);
+    }
+}
+
 void setup() {
 
 #ifdef ERASE_FLASH
@@ -370,10 +388,12 @@ void setup() {
   timeClient.update();
 
   if (preferences.isKey("timezone")) {  // initialize to UTC if TZ hasn't been set yet
-     preferences.getBytes("timezone", tz, sizeof(Timezone *));  // set and store time zone selection
-     Serial.println("Time Zone recovered from NVM");
+     char tzstring[5];
+     preferences.getString("timezone", tzstring, 5);  // set and store time zone selection
+     Serial.println(tzstring);
+     tz = TZstringToPointer(String(tzstring));
   } else {
-     preferences.putBytes("timezone", &UTC, sizeof(Timezone *));
+     preferences.putString("timezone", "UTC");
      Serial.println("Initialize Time Zone to UTC"); 
   }
   setTime(getNtpTime());

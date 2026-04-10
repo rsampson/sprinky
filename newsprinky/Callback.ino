@@ -196,9 +196,7 @@ void TZcallback(Control* sender, int type)
     else if (sender->value == String( "PST")) tz = &usPT;
     else Serial.println("Bad TZ selection");
     
-
-    preferences.putBytes("timezone", tz, sizeof(Timezone*)); // set and store time zone selection
-    preferences.getBytes("timezone", tz, sizeof(Timezone*)); 
+    preferences.putString("timezone", (sender->value).c_str()); // set and store time zone selection
     printTZ(tz);
     setTime(getNtpTime());
 
