@@ -2,11 +2,7 @@
 #include "sprinky.h"
 #include <ESPUI.h>
 
-#ifdef RELAY8
-constexpr int NUM_VALVES = 8;
-#else
-constexpr int NUM_VALVES = 4;
-#endif
+constexpr int NUM_VALVES = NUM_RELAYS;
 
 void RunCallback(Control *sender, int type) {
   if (type == B_UP) {

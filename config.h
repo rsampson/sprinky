@@ -4,7 +4,7 @@
 // }
 #include <Arduino.h>
 // --- Device Configuration ---
-constexpr const char *HOSTNAME = "testsprinky";
+constexpr const char *HOSTNAME = "sprinky1";
 #define LED_BUILTIN 2 // For ESP32 dev module, change if using different board
 
 // --- Hardware Profile Flags ---
@@ -30,11 +30,11 @@ static const uint8_t  relay[NUM_RELAYS] = { 16, 14, 12, 13 };
 
 // #define USE_WITH_HA // Add feature to be controlled by Home Assistant
 
-#define ON LOW
-#define OFF HIGH
+// #define ON LOW
+// #define OFF HIGH
 
-// #define ON HIGH
-// #define OFF LOW
+#define ON HIGH
+#define OFF LOW
 
 // --- Buffer Configs ---
 constexpr size_t BOOT_REASON_MESSAGE_SIZE = 150;

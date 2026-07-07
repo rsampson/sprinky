@@ -8,6 +8,8 @@
 *.obj
 *.elf
 *.bin
+*.cvs
+build/
 
 # Linker output
 *.ilk

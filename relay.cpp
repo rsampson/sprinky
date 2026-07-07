@@ -83,8 +83,8 @@ void controlRelays() {
     timer.cancel();  // cancel any manual operations
     state.start_time_ms = millis();
 
-    //expand watering time 0 to 2x over a 45-80 average degree temp range, map it into milli seconds
-    state.temp_adjust = map((int32_t)state.avg_temp, 45, 80, 1, 2000);
+    //expand watering time .3 to 3x over a 40-90 average degree temp range, map it into milli seconds
+    state.temp_adjust = map((int32_t)state.avg_temp, 40, 90, 300, 3000);
     state.runCycle = true;
   }
 

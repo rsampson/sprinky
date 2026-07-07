@@ -159,11 +159,7 @@ void handleWiFi() {
         webPrint("WiFi: Connection lost! Triggering reconnection...\n");
 
         currentWifiState = WIFI_STATE_DISCONNECTED;
-      } else {
-        // Log active status
-        Serial.printf("WiFi: Connected (RSSI: %d dBm)\n", WiFi.RSSI());
-        // webPrint("WiFi: Connected and active (RSSI: %d dBm)\n", WiFi.RSSI());
-      }
+      } 
     }
     break;
   }

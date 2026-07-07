@@ -1,3 +1,4 @@
+#include <sys/types.h>
 #pragma once
 
 #include "config.h"
@@ -33,6 +34,8 @@ struct UIControls {
   uint16_t hourNumber;
   uint16_t minuteNumber;
   uint16_t timeZoneLabel;
+  uint16_t maintab;
+  u_int16_t waterLabel;
 
   // We group identical elements into arrays!
   uint16_t buttons[8];

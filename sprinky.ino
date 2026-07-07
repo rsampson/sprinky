@@ -11,7 +11,7 @@
  */
 
 // Tested on ESP32 Dev module  and ESP12-F (esp8266), make sure these match your
-// board, otherwise strange results may occur. 
+// board, otherwise strange results may occur.
 
 
 #include "sprinky.h"
@@ -20,11 +20,11 @@
 #if defined(ESP32)
 #include <WiFi.h>
 #define TEMP_PIN 21
-#else // esp8266
+#else  // esp8266
 #include <ESP8266WiFi.h>
-#define DEBUG true // set to true for debug output, false for no debug output
-#define Serial                                                                 \
-  if (DEBUG)                                                                   \
+#define DEBUG true  // set to true for debug output, false for no debug output
+#define Serial \
+  if (DEBUG) \
   Serial
 #define TEMP_PIN D1
 // #define RELAY8  // some esp8266 boards may have 8 relays
@@ -34,7 +34,7 @@
 #warning Try MMU option '2nd heap shared' in 'tools' IDE menu (cf. https://arduino-esp8266.readthedocs.io/en/latest/mmu.html#option-summary)
 #warning use decorators: { HeapSelectIram doAllocationsInIRAM; ESPUI.addControl(...) ... } (cf. https://arduino-esp8266.readthedocs.io/en/latest/mmu.html#how-to-select-heap)
 #warning then check http://<ip>/heap
-#endif // MMU_IRAM_HEAP
+#endif  // MMU_IRAM_HEAP
 #ifndef DEBUG_ESP_OOM
 #error on ESP8266 and ESPUI, you must define OOM debug option when developping
 #endif
@@ -60,30 +60,28 @@ HASwitch switch6("valve6");
 HASwitch switch7("valve7");
 HASwitch switch8("valve8");
 HASwitch
-    switch9("disableSwitch"); // to turn the stand alone watering controller off
+  switch9("disableSwitch");  // to turn the stand alone watering controller off
 #endif
 #endif
 
-// NTP and Timezone libraries are included via time_manager.h
-
-#ifdef ERASE_FLASH
-#include <nvs_flash.h>
-#endif
+// #ifdef ERASE_FLASH
+// #include <nvs_flash.h>
+// #endif
 #include <Preferences.h>
 Preferences preferences;
 
-#include <arduino-timer.h> // ver 3.0.1
+#include <arduino-timer.h>  // ver 3.0.1
 TimerType timer =
-    timer_create_default(); // create a timer for auto shut down of valves
+  timer_create_default();  // create a timer for auto shut down of valves
 
-#include <ElegantOTA.h> 
+#include <ElegantOTA.h>
 //#include <ArduinoOTA.h>
 #include <TimeLib.h>
 
-#include <CircularBuffer.hpp> // version 1.4.0 https://github.com/rlogiacco/CircularBuffer
-CircularBuffer<float, 24> dayBuffer; // store 24 hour temp samples
+#include <CircularBuffer.hpp>         // version 1.4.0 https://github.com/rlogiacco/CircularBuffer
+CircularBuffer<float, 24> dayBuffer;  // store 24 hour temp samples
 
-#include <ESPUI.h> // version 2.2.4  uses EsoAsyncWebServer 3.6.0, AsynchTCP version 3.35 WebSockets 2.6.1 and Arduinojson 6.21.5
+#include <ESPUI.h>  // version 2.2.4  uses EsoAsyncWebServer 3.6.0, AsynchTCP version 3.35 WebSockets 2.6.1 and Arduinojson 6.21.5
 // Function Prototypes
 void connectWifi();
 extern void setUpUI();
@@ -103,14 +101,14 @@ extern void allOff();
 
 
 UIControls ui;
-SprinklerState state = {.disable = false,
-                        .runCycle = false,
-                        .runHour = 2,
-                        .runMinute = 10,
-                        .runtime = {300, 300, 300, 300, 300, 300, 300, 300},
-                        .start_time_ms = 0,
-                        .temp_adjust = 1000,
-                        .avg_temp = 65.0f};
+SprinklerState state = { .disable = false,
+                         .runCycle = false,
+                         .runHour = 2,
+                         .runMinute = 10,
+                         .runtime = { 300, 300, 300, 300, 300, 300, 300, 300 },
+                         .start_time_ms = 0,
+                         .temp_adjust = 1000,
+                         .avg_temp = 65.0f };
 
 String stored_hour, stored_minute;
 char charBuf[bufferSize];
@@ -121,28 +119,28 @@ char stylecol2[30];
 // sensor libraries
 #include <DallasTemperature.h>
 #include <OneWire.h>
-OneWire oneWire(TEMP_PIN);           // sensor hooked to TEMP_PIN
-DallasTemperature sensors(&oneWire); // version 4.0.3
+OneWire oneWire(TEMP_PIN);            // sensor hooked to TEMP_PIN
+DallasTemperature sensors(&oneWire);  // version 4.0.3
 #endif
 
 int getTempF() {
   float tempF;
 #ifdef DS18B20
   if (sensors.getDeviceCount() != 0) {
-    sensors.requestTemperatures(); // Send the command to get temperatures
+    sensors.requestTemperatures();  // Send the command to get temperatures
     tempF = float(sensors.getTempFByIndex(0));
   } else {
-    tempF = 70; // sensor failed, fake it
+    tempF = 70;  // sensor failed, fake it
   }
 #else
-  int sensorValue = analogRead(A0); // read diode voltage attached to A0 pin
+  int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
   // map diode voltage to temperature F  ( diode mv values recorded from
   // freezing and boiling water)
   tempF = float(
-      map(sensorValue, 640, 402, 32,
-          212)); // 1n914 diode @ .44 ma (10k / 5v), Wemos mini devides by .3125
-  // tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k /
-  // 5v)
+    map(sensorValue, 640, 402, 32,
+        212));  // 1n914 diode @ .44 ma (10k / 5v), Wemos mini devides by .3125
+                // tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k /
+                // 5v)
 #endif
 #ifdef USE_WITH_HA
   // report temperature to home assistant
@@ -160,24 +158,24 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
   esp_reset_reason_t reset_reason = esp_reset_reason();
 
   switch (reset_reason) {
-  case ESP_RST_UNKNOWN:
-    snprintf(buffer, bufferlength, "Reset reason can not be determined");
-    break;
-  case ESP_RST_POWERON:
-    snprintf(buffer, bufferlength, "Reset due to power-on event");
-    break;
-  case ESP_RST_SW:
-    snprintf(buffer, bufferlength, "Software reset via esp_restart");
-    break;
-  case ESP_RST_PANIC:
-    snprintf(buffer, bufferlength, "Software reset due to exception/panic");
-    break;
-  case ESP_RST_BROWNOUT:
-    snprintf(buffer, bufferlength, "Brownout reset (software or hardware)");
-    break;
-  default:
-    snprintf(buffer, bufferlength, "Unknown reset cause %d", reset_reason);
-    break;
+    case ESP_RST_UNKNOWN:
+      snprintf(buffer, bufferlength, "Reset reason can not be determined");
+      break;
+    case ESP_RST_POWERON:
+      snprintf(buffer, bufferlength, "Reset due to power-on event");
+      break;
+    case ESP_RST_SW:
+      snprintf(buffer, bufferlength, "Software reset via esp_restart");
+      break;
+    case ESP_RST_PANIC:
+      snprintf(buffer, bufferlength, "Software reset due to exception/panic");
+      break;
+    case ESP_RST_BROWNOUT:
+      snprintf(buffer, bufferlength, "Brownout reset (software or hardware)");
+      break;
+    default:
+      snprintf(buffer, bufferlength, "Unknown reset cause %d", reset_reason);
+      break;
   }
 #endif
 
@@ -186,27 +184,27 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
   resetInfo = ESP.getResetInfoPtr();
 
   switch (resetInfo->reason) {
-  case REASON_DEFAULT_RST:
-    snprintf(buffer, bufferlength, "Normal startup by power on");
-    break;
-  case REASON_WDT_RST:
-    snprintf(buffer, bufferlength, "Hardware watch dog reset");
-    break;
-  case REASON_EXCEPTION_RST:
-    snprintf(buffer, bufferlength, "Exception reset");
-    break;
-  case REASON_SOFT_WDT_RST:
-    snprintf(buffer, bufferlength, "Software watch dog reset");
-    break;
-  case REASON_SOFT_RESTART:
-    snprintf(buffer, bufferlength, "Software restart ,system_restart");
-    break;
-  case REASON_EXT_SYS_RST:
-    snprintf(buffer, bufferlength, "External system reset");
-    break;
-  default:
-    snprintf(buffer, bufferlength, "Unknown reset cause %d", resetInfo->reason);
-    break;
+    case REASON_DEFAULT_RST:
+      snprintf(buffer, bufferlength, "Normal startup by power on");
+      break;
+    case REASON_WDT_RST:
+      snprintf(buffer, bufferlength, "Hardware watch dog reset");
+      break;
+    case REASON_EXCEPTION_RST:
+      snprintf(buffer, bufferlength, "Exception reset");
+      break;
+    case REASON_SOFT_WDT_RST:
+      snprintf(buffer, bufferlength, "Software watch dog reset");
+      break;
+    case REASON_SOFT_RESTART:
+      snprintf(buffer, bufferlength, "Software restart ,system_restart");
+      break;
+    case REASON_EXT_SYS_RST:
+      snprintf(buffer, bufferlength, "External system reset");
+      break;
+    default:
+      snprintf(buffer, bufferlength, "Unknown reset cause %d", resetInfo->reason);
+      break;
   };
 #endif
 }
@@ -239,7 +237,9 @@ void onMqttConnected() {
   mqtt.subscribe("myCustomTopic");
 }
 
-void onMqttDisconnected() { Serial.println("Disconnected from the broker!"); }
+void onMqttDisconnected() {
+  Serial.println("Disconnected from the broker!");
+}
 
 void onMqttStateChanged(HAMqtt::ConnectionState state) {
   Serial.print("MQTT state changed to: ");
@@ -248,13 +248,19 @@ void onMqttStateChanged(HAMqtt::ConnectionState state) {
 
 // Array of valve switch pointers for easy indexing
 static HASwitch *valveSwitches[] = {
-    &switch1, &switch2, &switch3, &switch4,
+  &switch1,
+  &switch2,
+  &switch3,
+  &switch4,
 #ifdef RELAY8
-    &switch5, &switch6, &switch7, &switch8,
+  &switch5,
+  &switch6,
+  &switch7,
+  &switch8,
 #endif
 };
 static constexpr int NUM_VALVE_SWITCHES =
-    sizeof(valveSwitches) / sizeof(valveSwitches[0]);
+  sizeof(valveSwitches) / sizeof(valveSwitches[0]);
 
 // Turn off all valve switches in Home Assistant (report state back)
 static void allValveSwitchesOff() {
@@ -278,13 +284,13 @@ void onValveSwitchCommand(bool switchState, HASwitch *sender) {
       }
     }
     timer.in(60000,
-             shutOff); // turn off any manually activated valve after a minute
+             shutOff);  // turn off any manually activated valve after a minute
   } else {
     // Turning a valve OFF
     allOff();
     allValveSwitchesOff();
   }
-  sender->setState(switchState); // report state back to Home Assistant
+  sender->setState(switchState);  // report state back to Home Assistant
 }
 
 void onDisableSwitchCommand(bool switchState, HASwitch *sender) {
@@ -301,25 +307,24 @@ void onDisableSwitchCommand(bool switchState, HASwitch *sender) {
       preferences.putBool("disable", false);
     }
   }
-  sender->setState(switchState); // report state back to Home Assistant
+  sender->setState(switchState);  // report state back to Home Assistant
 }
-#endif // USE_WITH_HA
+#endif  // USE_WITH_HA
 
-// printTZ() and TZstringToPointer() are now defined in time_manager.cpp
 
 void setup() {
 
-#ifdef ERASE_FLASH
-  nvs_flash_erase(); // erase the NVS partition and...
-  nvs_flash_init();  // initialize the NVS partition.
-#endif
+// #ifdef ERASE_FLASH
+//   nvs_flash_erase();  // erase the NVS partition and...
+//   nvs_flash_init();   // initialize the NVS partition.
+// #endif
 
   Serial.begin(115200);
   Serial.setDebugOutput(true);
   relayConfig();
   allOff();
 
-  pinMode(LED_BUILTIN, OUTPUT); // set heartbeat LED pin to OUTPUT
+  pinMode(LED_BUILTIN, OUTPUT);  // set heartbeat LED pin to OUTPUT
   digitalWrite(LED_BUILTIN, LOW);
 
   if (!preferences.begin("Settings")) {
@@ -329,14 +334,14 @@ void setup() {
 
   setupWiFi();
 
-  timeClient.begin(); // set up ntp time client and then initialize time library
+  timeClient.begin();  // set up ntp time client and then initialize time library
   timeClient.update();
 
   if (preferences.isKey(
-          "timezone")) { // initialize to UTC if TZ hasn't been set yet
+        "timezone")) {  // initialize to UTC if TZ hasn't been set yet
     char tzstring[5];
     preferences.getString("timezone", tzstring,
-                          5); // set and store time zone selection
+                          5);  // set and store time zone selection
     Serial.println(tzstring);
     tz = TZstringToPointer(String(tzstring));
   } else {
@@ -345,9 +350,9 @@ void setup() {
   }
   setTime(getNtpTime());
   setSyncProvider(getNtpTime);
-  setSyncInterval(300); // sync time server every 5 minutes
+  setSyncInterval(300);  // sync time server every 5 minutes
 
-#ifdef DS18B20 // temp sensor
+#ifdef DS18B20  // temp sensor
   sensors.begin();
   if (sensors.getDeviceCount() != 0) {
     Serial.println("temp sensor configured");
@@ -360,18 +365,26 @@ void setup() {
   Serial.println("configuring Gui");
   setUpUI();
 
+  ElegantOTA.begin(ESPUI.WebServer());
+
   printTZ(tz);
 
   state.disable = preferences.getBool("disable", "0");
-  ESPUI.updateSwitcher(ui.mainSwitcher, state.disable);
-  ESPUI.updateLabel(ui.aveTempLabel, "24 hour average temperature: " +
-                                         String(state.avg_temp) + " F");
 
-  ElegantOTA.begin(ESPUI.WebServer());
-  //ArduinoOTA.begin();
+  if (state.disable == true) {
+    ESPUI.updateLabel(ui.waterLabel, "Watering OFF");
+  } else {
+    ESPUI.updateLabel(ui.waterLabel, "Watering ON");
+  }
+
+  ESPUI.updateLabel(ui.aveTempLabel, "24 hour average temperature: " + String(state.avg_temp) + " F");
+
   //  boot up message
-  webPrint("%s up at: %s on %s\n", HOSTNAME, timeClient.getFormattedTime(),
-           Days[weekday()]);
+  char buf1[20];
+  time_t t = now();
+  sprintf(buf1, "%02d:%02d:%02d %02d/%02d", hour(t), minute(t), second(t),
+          month(t), day(t));
+  webPrint("%s up at: %s on %s\n", HOSTNAME, buf1,  Days[weekday()]);
   getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
   webPrint("Reset reason: %s\n", bootReasonMessage);
 
@@ -440,7 +453,7 @@ void setup() {
   } else {
     Serial.println("Failed to connect to MQTT broker");
   }
-#endif // USE_WITH_HA
+#endif  // USE_WITH_HA
 
   Serial.println("We Are Go!");
 }
@@ -455,25 +468,25 @@ void loop() {
   mqtt.loop();
 #endif
   handleWiFi();
-  timeClient.update(); // run ntp time client
-  controlRelays(); // activate relay if correct time
+  timeClient.update();  // run ntp time client
+  controlRelays();      // activate relay if correct time
   ElegantOTA.loop();
 
-  if (millis() > previousTime + 1000) { // update gui once per second
-    timer.tick(); // tick the timer (to shut down valve tests after two minutes)
+  if (millis() > previousTime + 1000) {  // update gui once per second
+    timer.tick();                        // tick the timer (to shut down valve tests after two minutes)
     ComputeAveTemp();
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // toggle the LED
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // toggle the LED
     fetchDebugText();
     ESPUI.updateLabel(ui.debugLabel, String(charBuf));
     ESPUI.updateLabel(ui.tempLabel, String(getTempF()) + " deg F");
     ESPUI.updateLabel(ui.signalLabel, String(WiFi.RSSI()) + " dbm");
-
+   
     // determine how to find the source of time
     if (ap_mode == false) {
       displayTime();
     } else {
-      ESPUI.updateTime(ui.mainTime); // get time from browser, we are not
-                                     // connected to the NTP server
+      ESPUI.updateTime(ui.mainTime);  // get time from browser, we are not
+                                      // connected to the NTP server
     }
 
     previousTime = millis();
