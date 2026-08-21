@@ -42,7 +42,7 @@
 #endif
 
 WiFiClient client;
-// UDP instance is now defined in time_manager.cpp
+
 
 #ifdef USE_WITH_HA
 #include <ArduinoHA.h>
@@ -64,18 +64,13 @@ HASwitch
 #endif
 #endif
 
-// #ifdef ERASE_FLASH
-// #include <nvs_flash.h>
-// #endif
 #include <Preferences.h>
 Preferences preferences;
 
 #include <arduino-timer.h>  // ver 3.0.1
-TimerType timer =
-  timer_create_default();  // create a timer for auto shut down of valves
+TimerType timer =  timer_create_default();  // create a timer for auto shut down of valves
 
 #include <ElegantOTA.h>
-//#include <ArduinoOTA.h>
 #include <TimeLib.h>
 
 #include <CircularBuffer.hpp>         // version 1.4.0 https://github.com/rlogiacco/CircularBuffer

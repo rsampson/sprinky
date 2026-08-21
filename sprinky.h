@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 #include <CircularBuffer.hpp>
-//#include <umm_malloc/umm_heap_select.h>
+#include <umm_malloc/umm_heap_select.h>
 
 // Forward decl of decltype timer
 #include <arduino-timer.h>

@@ -38,12 +38,12 @@ void relayOn(int relay_index) {
   allOff();
 
   // "buzz" relay to clear jammed valve
-  for (int j = 0; j < 3; j++) {
-    digitalWrite(relay[relay_index], ON);
-    delay(20);
-    digitalWrite(relay[relay_index], OFF);
-    delay(20);
-  }
+  // for (int j = 0; j < 3; j++) {
+  //   digitalWrite(relay[relay_index], ON);
+  //   delay(20);
+  //   digitalWrite(relay[relay_index], OFF);
+  //   delay(20);
+  // }
 
   for (int i = 0; i < NUM_RELAYS; i++) {  // make sure only one relay is on at a time
     // turn relay on, all others off

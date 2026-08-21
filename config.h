@@ -4,11 +4,11 @@
 // }
 #include <Arduino.h>
 // --- Device Configuration ---
-constexpr const char *HOSTNAME = "sprinky1";
+constexpr const char *HOSTNAME = "testsprinky";
 #define LED_BUILTIN 2 // For ESP32 dev module, change if using different board
 
 // --- Hardware Profile Flags ---
-#define RELAY8
+//#define RELAY8
 
 #ifdef RELAY8
 static constexpr uint8_t NUM_RELAYS = 8;
