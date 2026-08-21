@@ -16,9 +16,11 @@
 
 #if defined(ESP32)
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #define TEMP_PIN 21
 #else  // esp8266
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
 #define DEBUG true  // set to true for debug output, false for no debug output
 #define Serial \
   if (DEBUG) \
