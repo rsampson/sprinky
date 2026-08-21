@@ -82,7 +82,8 @@ SprinklerState state = { .disable = false,
                          .start_time_ms = 0,
                          .temp_adjust = 1000,
                          .avg_temp = 65.0f,
-                         .lastRunMinutes = 0 };
+                         .lastRunMinutes = 0,
+                         .activeDays = 0x7F };
 
 char charBuf[bufferSize];
 // temperature measuring stuff ********************************************

@@ -76,6 +76,8 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
         <label for="run-minute">Run minute</label>
         <input type="number" id="run-minute" min="0" max="59">
       </div>
+      <div class="card-label">Days to Water</div>
+      <div id="day-checkboxes" class="day-checkboxes"></div>
       <button id="run-now" class="btn">Run Watering Sequence Now</button>
     </div>
 
@@ -302,6 +304,27 @@ pre#log {
 .form-row input[type="number"] { max-width: 5rem; flex: none; }
 .form-row input[type="range"] { flex: 1; }
 
+.day-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+.day-btn {
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.day-btn.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
 .valve-row {
   display: flex;
   align-items: center;
@@ -341,6 +364,8 @@ const char APP_JS[] PROGMEM = R"JS(
 (() => {
   let numValves = 0;
   let configBuilt = false;
+  let activeDays = 0x7F;
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const $ = (id) => document.getElementById(id);
 
@@ -388,6 +413,31 @@ const char APP_JS[] PROGMEM = R"JS(
     configBuilt = true;
   }
 
+  function buildDayCheckboxes() {
+    const el = $('day-checkboxes');
+    el.innerHTML = '';
+    DAY_NAMES.forEach((name, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'day-btn';
+      btn.id = 'day-btn-' + i;
+      btn.textContent = name;
+      btn.addEventListener('click', () => {
+        activeDays ^= (1 << i);
+        btn.classList.toggle('active', !!(activeDays & (1 << i)));
+      });
+      el.appendChild(btn);
+    });
+  }
+
+  function applyActiveDays(mask) {
+    activeDays = mask;
+    DAY_NAMES.forEach((_, i) => {
+      const btn = $('day-btn-' + i);
+      if (btn) btn.classList.toggle('active', !!(mask & (1 << i)));
+    });
+  }
+
   function toggleValve(i, on) {
     fetch('/api/valve/' + i, {
       method: 'POST',
@@ -414,8 +464,10 @@ const char APP_JS[] PROGMEM = R"JS(
 
     if (!configBuilt) {
       buildValveUI(s.valves);
+      buildDayCheckboxes();
       $('run-hour').value = s.runHour;
       $('run-minute').value = s.runMinute;
+      applyActiveDays(s.activeDays);
     }
 
     s.valves.forEach((v, i) => {
@@ -460,6 +512,7 @@ const char APP_JS[] PROGMEM = R"JS(
     const body = {
       hour: parseInt($('run-hour').value, 10),
       minute: parseInt($('run-minute').value, 10),
+      activeDays: activeDays,
       valves: valves,
     };
     fetch('/api/schedule', {

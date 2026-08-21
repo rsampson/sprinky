@@ -1,8 +1,5 @@
 #pragma once
-// extern "C" {
-//   #include "umm_malloc/umm_malloc.h"
-// }
-#include <Arduino.h>
+
 // --- Device Configuration ---
 constexpr const char *HOSTNAME = "testsprinky";
 #define LED_BUILTIN 2 // For ESP32 dev module, change if using different board

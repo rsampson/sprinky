@@ -27,6 +27,10 @@ struct SprinklerState {
   uint32_t temp_adjust;
   float avg_temp;
   uint32_t lastRunMinutes;
+
+  // Bitmask of days the watering sequence is allowed to run on.
+  // Bit 0 = Sunday .. bit 6 = Saturday, matching TimeLib's weekday() (1-7, Sunday=1).
+  uint8_t activeDays;
 };
 
 // --- Global Struct Instances ---

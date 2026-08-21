@@ -70,7 +70,8 @@ void controlRelays() {
   }
 
   time_t t = now();                                                                           // Store the current time atomically
-  if (hour(t) == state.runHour && minute(t) == state.runMinute && second(t) == 0 && state.runCycle == false) {  // trigger start of cycle
+  bool todayActive = state.activeDays & (1 << (weekday() - 1));  // weekday() is 1-7, Sunday=1
+  if (todayActive && hour(t) == state.runHour && minute(t) == state.runMinute && second(t) == 0 && state.runCycle == false) {  // trigger start of cycle
     allOff();
     timer.cancel();  // cancel any manual operations
     state.start_time_ms = millis();

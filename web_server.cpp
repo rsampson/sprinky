@@ -37,6 +37,7 @@ static void handleStatus(AsyncWebServerRequest *request) {
   doc["disabled"] = state.disable;
   doc["runHour"] = state.runHour;
   doc["runMinute"] = state.runMinute;
+  doc["activeDays"] = state.activeDays;
   doc["ssid"] = stored_ssid;
   doc["apMode"] = ap_mode;
 
@@ -98,8 +99,10 @@ static void handleSchedule(AsyncWebServerRequest *request, JsonVariant &json) {
 
   state.runHour = body["hour"] | state.runHour;
   state.runMinute = body["minute"] | state.runMinute;
+  state.activeDays = body["activeDays"] | state.activeDays;
   preferences.putString("hour", String(state.runHour));
   preferences.putString("minute", String(state.runMinute));
+  preferences.putUChar("activeDays", state.activeDays);
 
   JsonArray valves = body["valves"].as<JsonArray>();
   for (int i = 0; i < NUM_RELAYS && i < (int)valves.size(); i++) {
@@ -155,6 +158,7 @@ static AsyncCallbackJsonWebHandler *jsonHandler(const char *uri, ArJsonRequestHa
 static void loadSchedule() {
   state.runHour = preferences.getString("hour", "8").toInt();
   state.runMinute = preferences.getString("minute", "0").toInt();
+  state.activeDays = preferences.getUChar("activeDays", 0x7F);
 
   for (int i = 0; i < NUM_RELAYS; i++) {
     char slideKey[10];
