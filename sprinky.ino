@@ -1,7 +1,4 @@
 /**
- * GUI adapted from the brilliant ESPUI written by: Lukas Bachschwell
- * and a demo by Ian Gray @iangray1000
- *
  * When this program boots, it will load an SSID and password from nvmem.
  * If these credentials do not work for some reason, the ESP will create an
  * Access Point wifi with the SSID HOSTNAME (defined below). You can then
@@ -28,17 +25,6 @@
   Serial
 #define TEMP_PIN D1
 // #define RELAY8  // some esp8266 boards may have 8 relays
-#include <umm_malloc/umm_heap_select.h>
-#ifndef CORE_MOCK
-#ifndef MMU_IRAM_HEAP
-#warning Try MMU option '2nd heap shared' in 'tools' IDE menu (cf. https://arduino-esp8266.readthedocs.io/en/latest/mmu.html#option-summary)
-#warning use decorators: { HeapSelectIram doAllocationsInIRAM; ESPUI.addControl(...) ... } (cf. https://arduino-esp8266.readthedocs.io/en/latest/mmu.html#how-to-select-heap)
-#warning then check http://<ip>/heap
-#endif  // MMU_IRAM_HEAP
-#ifndef DEBUG_ESP_OOM
-#error on ESP8266 and ESPUI, you must define OOM debug option when developping
-#endif
-#endif
 #endif
 
 WiFiClient client;
@@ -76,18 +62,9 @@ TimerType timer =  timer_create_default();  // create a timer for auto shut down
 #include <CircularBuffer.hpp>         // version 1.4.0 https://github.com/rlogiacco/CircularBuffer
 CircularBuffer<float, 24> dayBuffer;  // store 24 hour temp samples
 
-#include <ESPUI.h>  // version 2.2.4  uses EsoAsyncWebServer 3.6.0, AsynchTCP version 3.35 WebSockets 2.6.1 and Arduinojson 6.21.5
+#include "web_server.h"
 // Function Prototypes
 void connectWifi();
-extern void setUpUI();
-extern void textCallback(Control *sender, int type);
-extern void generalCallback(Control *sender, int type);
-extern void valveButtonCallback(Control *sender, int type);
-extern void hourCallback(Control *sender, int type);
-extern void minuteCallback(Control *sender, int type);
-extern void SaveWifiDetailsCallback(Control *sender, int type);
-extern void paramCallback(Control *sender, int type, int param);
-extern void slideCallback(Control *sender, int type);
 extern void ComputeAveTemp(void);
 extern void controlRelays(void);
 extern void relayConfig();
@@ -95,7 +72,6 @@ extern void webPrint(const char *format, ...);
 extern void allOff();
 
 
-UIControls ui;
 SprinklerState state = { .disable = false,
                          .runCycle = false,
                          .runHour = 2,
@@ -103,11 +79,10 @@ SprinklerState state = { .disable = false,
                          .runtime = { 300, 300, 300, 300, 300, 300, 300, 300 },
                          .start_time_ms = 0,
                          .temp_adjust = 1000,
-                         .avg_temp = 65.0f };
+                         .avg_temp = 65.0f,
+                         .lastRunMinutes = 0 };
 
-String stored_hour, stored_minute;
 char charBuf[bufferSize];
-char stylecol2[30];
 // temperature measuring stuff ********************************************
 
 #ifdef DS18B20
@@ -294,11 +269,9 @@ void onDisableSwitchCommand(bool switchState, HASwitch *sender) {
     // switchState == true means ON state (watering disabled)
     if (switchState) {
       state.disable = true;
-      ESPUI.updateControlLabel(ui.mainSwitcher, "Watering off");
       preferences.putBool("disable", true);
     } else {
       state.disable = false;
-      ESPUI.updateControlLabel(ui.mainSwitcher, "Watering on");
       preferences.putBool("disable", false);
     }
   }
@@ -357,22 +330,14 @@ void setup() {
 #endif
   dayBuffer.clear();
 
-  Serial.println("configuring Gui");
-  setUpUI();
+  Serial.println("configuring web server");
+  setUpWebServer();
 
-  ElegantOTA.begin(ESPUI.WebServer());
+  ElegantOTA.begin(&server);
 
-  printTZ(tz);
+  printTZ();
 
   state.disable = preferences.getBool("disable", "0");
-
-  if (state.disable == true) {
-    ESPUI.updateLabel(ui.waterLabel, "Watering OFF");
-  } else {
-    ESPUI.updateLabel(ui.waterLabel, "Watering ON");
-  }
-
-  ESPUI.updateLabel(ui.aveTempLabel, "24 hour average temperature: " + String(state.avg_temp) + " F");
 
   //  boot up message
   char buf1[20];
@@ -453,8 +418,6 @@ void setup() {
   Serial.println("We Are Go!");
 }
 
-// displayTime() is now defined in time_manager.cpp
-
 long unsigned previousTime;
 
 void loop() {
@@ -467,23 +430,10 @@ void loop() {
   controlRelays();      // activate relay if correct time
   ElegantOTA.loop();
 
-  if (millis() > previousTime + 1000) {  // update gui once per second
+  if (millis() > previousTime + 1000) {  // once per second housekeeping
     timer.tick();                        // tick the timer (to shut down valve tests after two minutes)
     ComputeAveTemp();
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // toggle the LED
-    fetchDebugText();
-    ESPUI.updateLabel(ui.debugLabel, String(charBuf));
-    ESPUI.updateLabel(ui.tempLabel, String(getTempF()) + " deg F");
-    ESPUI.updateLabel(ui.signalLabel, String(WiFi.RSSI()) + " dbm");
-   
-    // determine how to find the source of time
-    if (ap_mode == false) {
-      displayTime();
-    } else {
-      ESPUI.updateTime(ui.mainTime);  // get time from browser, we are not
-                                      // connected to the NTP server
-    }
-
     previousTime = millis();
   }
 #if !defined(ESP32)

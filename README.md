@@ -40,14 +40,14 @@ This is a networked smart sprinkler/watering controller that can:
 
 ### Special Features and Details:
 
-#### User Interface (ESPUI):
-- Web-based GUI with tabs for:
+#### User Interface:
+- Custom web dashboard (served directly from the ESP, no external framework) with sections for:
 - WiFi credentials management
 - Valve control buttons
 - Schedule configuration
 - Temperature monitoring
 - System status display
-- Real-time updates of temperature, time, signal strength, and system status
+- Live updates of temperature, time, signal strength, and system status via polling
 
 #### Home Assistant Integration (USE_WITH_HA):
 - Full MQTT integration for Home Assistant compatibility

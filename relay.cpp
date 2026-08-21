@@ -1,5 +1,4 @@
 #include "sprinky.h"
-#include <ESPUI.h>
 #include <TimeLib.h>
 
 
@@ -21,11 +20,6 @@ void allOff() {
 bool shutOff(void*) {  // bool return and void* makes timer api happy
   allOff();
   timer.cancel();
-  // reset button color to indicate inactivity
-  sprintf(stylecol2, "background-color: silver;");
-  for (int i = 0; i < NUM_RELAYS; i++) {
-    ESPUI.setElementStyle(ui.buttons[i], stylecol2);
-  }
   Serial.println("timer shut off ");
   return (false);
 }
@@ -48,15 +42,13 @@ void relayOn(int relay_index) {
   for (int i = 0; i < NUM_RELAYS; i++) {  // make sure only one relay is on at a time
     // turn relay on, all others off
     digitalWrite(relay[i], (i == relay_index) ? ON : OFF);
-    sprintf(stylecol2, (i == relay_index) ? "background-color: lime;" :  "background-color: silver;" );
-    ESPUI.setElementStyle(ui.buttons[i], stylecol2); // animate button
     relayEnabled[i] = (i == relay_index);
   }
   // turn on last valve as a master safety valve
   //digitalWrite(relay[NUM_RELAYS - 1], ON);
-    
+
   time_t t = now();
-  webPrint("Valve %1d on %s @ %02d:%02d:%02d %02d/%02d \n",  relay_index + 1, Days[weekday()], hour(t), minute(t), second(t),  month(t), day(t)); 
+  webPrint("Valve %1d on %s @ %02d:%02d:%02d %02d/%02d \n",  relay_index + 1, Days[weekday()], hour(t), minute(t), second(t),  month(t), day(t));
 }
 
 // runtimes are in seconds, start times are in ms
@@ -105,8 +97,7 @@ void controlRelays() {
       void* garb;  // make call happy
       shutOff(garb);
       // print statistics
-      String totalRunTime = String((millis() - state.start_time_ms) /60000);
-      ESPUI.updateLabel(ui.runtimeLabel, totalRunTime + " minutes");
+      state.lastRunMinutes = (millis() - state.start_time_ms) / 60000;
       webPrint("Run times scaled by %2d percent\n", state.temp_adjust / 10);
       state.runCycle = false;
     }
@@ -132,10 +123,6 @@ void ComputeAveTemp(void) {
       state.avg_temp += dayBuffer[i];
     }
     state.avg_temp = state.avg_temp / dayBuffer.size();
-
-    // report average temp and run time scaling adjustment
-    ESPUI.updateLabel(ui.aveTempLabel, "24 hour average temperature: " + String(state.avg_temp) + " F");
-    
 
   } else if (minute(t) == 0 && second(t) > 0) haveRan = false;  // clear for run next hour
 }

@@ -24,7 +24,8 @@ extern Timezone usPT;
 extern String Days[];
 
 // --- Function Prototypes ---
-void displayTime();
-void printTZ(Timezone *tzone);
+void printTZ();
 Timezone *TZstringToPointer(String tzstring);
+String tzName();
+String tzCode();
 time_t getNtpTime();

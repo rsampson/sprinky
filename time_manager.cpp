@@ -1,7 +1,6 @@
 #include "time_manager.h"
 #include "sprinky.h"
 #include <WiFiUdp.h>
-#include <ESPUI.h>
 
 // --- UDP and NTP Client instances ---
 WiFiUDP ntpUDP;
@@ -69,35 +68,47 @@ time_t getNtpTime(void) {
   return (serv_time);
 }
 
-void printTZ(Timezone *tzone) {
-  String TZS;
-
-  if (tzone == &ausET)
-    TZS = "Australia Eastern";
-  else if (tzone == &tzMSK)
-    TZS = "Moscow";
-  else if (tzone == &CE)
-    TZS = "Central European";
-  else if (tzone == &UK)
-    TZS = "British Standard";
-  else if (tzone == &UTC)
-    TZS = "Universal";
-  else if (tzone == &usET)
-    TZS = "Eastern Standard";
-  else if (tzone == &usCT)
-    TZS = "Central Standard";
-  else if (tzone == &usMT)
-    TZS = "Mountain Standard";
-  else if (tzone == &usAZ)
-    TZS = "Arizona";
-  else if (tzone == &usPT)
-    TZS = "Pacific Standard";
+String tzName() {
+  if (tz == &ausET)
+    return "Australia Eastern Time";
+  else if (tz == &tzMSK)
+    return "Moscow Time";
+  else if (tz == &CE)
+    return "Central European Time";
+  else if (tz == &UK)
+    return "British Standard Time";
+  else if (tz == &UTC)
+    return "Universal Time";
+  else if (tz == &usET)
+    return "Eastern Standard Time";
+  else if (tz == &usCT)
+    return "Central Standard Time";
+  else if (tz == &usMT)
+    return "Mountain Standard Time";
+  else if (tz == &usAZ)
+    return "Arizona Time";
+  else if (tz == &usPT)
+    return "Pacific Standard Time";
   else
-    TZS = "Unknown TZ";
+    return "Unknown TZ Time";
+}
 
-  TZS = TZS + " Time";
-  Serial.println(TZS);
-  ESPUI.updateControlValue(ui.timeZoneLabel, TZS);
+String tzCode() {
+  if (tz == &ausET) return "AEST";
+  else if (tz == &tzMSK) return "MSK";
+  else if (tz == &CE) return "CE";
+  else if (tz == &UK) return "GMT";
+  else if (tz == &UTC) return "UTC";
+  else if (tz == &usET) return "EST";
+  else if (tz == &usCT) return "CST";
+  else if (tz == &usMT) return "MST";
+  else if (tz == &usAZ) return "AZT";
+  else if (tz == &usPT) return "PST";
+  else return "UTC";
+}
+
+void printTZ() {
+  Serial.println(tzName());
 }
 
 Timezone *TZstringToPointer(String tzstring) {
@@ -125,12 +136,4 @@ Timezone *TZstringToPointer(String tzstring) {
     Serial.println("Bad TZ selection");
     return (&UTC);
   }
-}
-
-void displayTime(void) {
-  char buf1[20];
-  time_t t = now();
-  sprintf(buf1, "%02d:%02d:%02d %02d/%02d", hour(t), minute(t), second(t),
-          month(t), day(t));
-  ESPUI.updateLabel(ui.timeLabel, buf1);
 }
