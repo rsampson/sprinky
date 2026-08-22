@@ -107,13 +107,19 @@ int getTempF() {
   }
 #else
   int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
-  // map diode voltage to temperature F  ( diode mv values recorded from
-  // freezing and boiling water)
-  tempF = float(
-    map(sensorValue, 640, 402, 32,
-        212));  // 1n914 diode @ .44 ma (10k / 5v), Wemos mini devides by .3125
-                // tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k /
-                // 5v)
+  if (sensorValue < 100) {
+    // no diode connected -- an unbiased floating pin reads near 0, well below
+    // the 402-640 range a real diode produces across its calibrated 32-212F span
+    tempF = 70;  // no sensor found, fake it
+  } else {
+    // map diode voltage to temperature F  ( diode mv values recorded from
+    // freezing and boiling water)
+    tempF = float(
+      map(sensorValue, 640, 402, 32,
+          212));  // 1n914 diode @ .44 ma (10k / 5v), Wemos mini devides by .3125
+                  // tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k /
+                  // 5v)
+  }
 #endif
 #ifdef USE_WITH_HA
   // report temperature to home assistant

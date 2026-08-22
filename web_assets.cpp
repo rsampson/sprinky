@@ -64,7 +64,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 
   <section id="tab-valves" class="tab">
     <div class="card wide">
-      <div class="card-label">Diagnostics — open a valve for two minutes</div>
+      <div class="card-label">Diagnostics — open a valve for one minute</div>
       <div id="valve-buttons" class="valve-buttons"></div>
     </div>
 
