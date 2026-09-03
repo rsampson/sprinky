@@ -23,10 +23,6 @@
 #else  // esp8266
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
-#define DEBUG true  // set to true for debug output, false for no debug output
-#define Serial \
-  if (DEBUG) \
-  Serial
 #define TEMP_PIN D1
 // #define RELAY8  // some esp8266 boards may have 8 relays
 #endif
@@ -44,17 +40,12 @@ TimerType timer =  timer_create_default();  // create a timer for auto shut down
 CircularBuffer<float, 24> dayBuffer;  // store 24 hour temp samples
 
 #include "web_server.h"
-// Function Prototypes
-void connectWifi();
-extern void ComputeAveTemp(void);
-extern void controlRelays(void);
-extern void relayConfig();
-extern void webPrint(const char *format, ...);
-extern void allOff();
+// Shared prototypes live in sprinky.h (included above).
 
 
-SprinklerState state = { .disable = false,
+SprinklerState state = { .wateringDisabled = false,
                          .runCycle = false,
+                         .tempScaling = true,
                          .runHour = 2,
                          .runMinute = 10,
                          .runtime = { 300, 300, 300, 300, 300, 300, 300, 300 },
@@ -164,11 +155,10 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
 #endif
 }
 
-// Timezone rules, variables, and getNtpTime() are now defined in
+// Timezone rules, variables, and currentLocalTime() are now defined in
 // time_manager.cpp
 
 char bootReasonMessage[BOOT_REASON_MESSAGE_SIZE];
-String bootTime;
 
 
 void setup() {
@@ -207,8 +197,8 @@ void setup() {
     preferences.putString("timezone", "UTC");
     Serial.println("Initialize Time Zone to UTC");
   }
-  setTime(getNtpTime());
-  setSyncProvider(getNtpTime);
+  setTime(currentLocalTime());
+  setSyncProvider(currentLocalTime);
   setSyncInterval(300);  // sync time server every 5 minutes
 
 #ifdef DS18B20  // temp sensor
@@ -228,7 +218,9 @@ void setup() {
 
   printTZ();
 
-  state.disable = preferences.getBool("disable", "0");
+  // Default false: a missing key must mean "watering enabled", not disabled.
+  // (The old "0" literal was a const char* -> non-null -> true.)
+  state.wateringDisabled = preferences.getBool("disable", false);
 
   //  boot up message
   char buf1[20];
@@ -242,21 +234,27 @@ void setup() {
   Serial.println("We Are Go!");
 }
 
-long unsigned previousTime;
+unsigned long lastHousekeepingMs = 0;
 
 void loop() {
 
   handleWiFi();
-  timeClient.update();  // run ntp time client
+  // Only poll NTP when actually connected: forceUpdate() blocks ~1s on a UDP
+  // timeout otherwise, which would stall the loop (and the watering trigger
+  // window) for the whole duration of a WiFi outage. TimeLib's now() keeps
+  // free-running off millis() in the meantime, so timekeeping still advances.
+  if (WiFi.status() == WL_CONNECTED) {
+    timeClient.update();  // run ntp time client
+  }
   controlRelays();      // activate relay if correct time
   ElegantOTA.loop();
 
-  if (millis() > previousTime + 1000) {  // once per second housekeeping
+  if (millis() - lastHousekeepingMs >= 1000) {  // once per second housekeeping (rollover-safe)
     timer.tick();                        // tick the timer (to shut down valve tests after two minutes)
     state.cur_temp = getTempF();         // sample sensor here (loop ctx); web handlers read the cache
-    ComputeAveTemp();
+    updateHourlyTempAverage();
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // toggle the LED
-    previousTime = millis();
+    lastHousekeepingMs = millis();
   }
 #if !defined(ESP32)
   // We don't need to call this explicitly on ESP32 but we do on 8266

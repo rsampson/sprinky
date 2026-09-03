@@ -8,12 +8,12 @@ void relayConfig() {
   }
 }
 
-bool relayEnabled[NUM_RELAYS];
+bool valveIsOpen[NUM_RELAYS];
 
 void allOff() {
   for (int i = 0; i < NUM_RELAYS; i++) {
-    digitalWrite(relay[i], OFF);
-    relayEnabled[i] = false;
+    digitalWrite(relay[i], RELAY_INACTIVE);
+    valveIsOpen[i] = false;
   }
 }
 
@@ -28,24 +28,24 @@ bool shutOff(void*) {  // bool return and void* makes timer api happy
 // be aware that this function gets called multiple times, but should only run once per session
 void relayOn(int relay_index) {
 
-  if (relayEnabled[relay_index] == true) return;  // only turn on if off
+  if (valveIsOpen[relay_index] == true) return;  // only turn on if off
   allOff();
 
   // "buzz" relay to clear jammed valve
   // for (int j = 0; j < 3; j++) {
-  //   digitalWrite(relay[relay_index], ON);
+  //   digitalWrite(relay[relay_index], RELAY_ACTIVE);
   //   delay(20);
-  //   digitalWrite(relay[relay_index], OFF);
+  //   digitalWrite(relay[relay_index], RELAY_INACTIVE);
   //   delay(20);
   // }
 
   for (int i = 0; i < NUM_RELAYS; i++) {  // make sure only one relay is on at a time
     // turn relay on, all others off
-    digitalWrite(relay[i], (i == relay_index) ? ON : OFF);
-    relayEnabled[i] = (i == relay_index);
+    digitalWrite(relay[i], (i == relay_index) ? RELAY_ACTIVE : RELAY_INACTIVE);
+    valveIsOpen[i] = (i == relay_index);
   }
   // turn on last valve as a master safety valve
-  //digitalWrite(relay[NUM_RELAYS - 1], ON);
+  //digitalWrite(relay[NUM_RELAYS - 1], RELAY_ACTIVE);
 
   time_t t = now();
   webPrint("Valve %1d on %s @ %02d:%02d:%02d %02d/%02d \n",  relay_index + 1, Days[weekday()], hour(t), minute(t), second(t),  month(t), day(t));
@@ -63,27 +63,52 @@ void relayOn(int relay_index) {
 #define START8 (START7 + state.runtime[6] * state.temp_adjust)
 #define START9 (START8 + state.runtime[7] * state.temp_adjust)
 
+// Calendar-day key (YYYYMMDD) of the last automatic cycle start, so a scheduled
+// run fires at most once per day; it self-clears when the date rolls over.
+// A latch plus a short catch-up window (below) replaces the old exact
+// second(t)==0 match, so a loop that runs a little late (e.g. briefly stalled
+// during a WiFi outage) still starts the cycle instead of skipping the
+// one-second trigger window entirely.
+static long lastAutoRunDayKey = -1;
+
+// How long after the scheduled minute we'll still start a missed cycle. Covers
+// a sluggish loop / short stall, but not "device was off for hours" (we don't
+// want it watering at noon because it booted after a morning slot).
+static const int CATCHUP_MINUTES = 5;
+
 void controlRelays() {
 
-  if (state.disable) {
+  if (state.wateringDisabled) {
     return;
   }
 
   time_t t = now();                                                                           // Store the current time atomically
+  long dayKey = (long)year(t) * 10000 + month(t) * 100 + day(t);  // unique per calendar day
+  int nowMins = hour(t) * 60 + minute(t);
+  int schedMins = state.runHour * 60 + state.runMinute;
   bool todayActive = state.activeDays & (1 << (weekday() - 1));  // weekday() is 1-7, Sunday=1
-  if (todayActive && hour(t) == state.runHour && minute(t) == state.runMinute && second(t) == 0 && state.runCycle == false) {  // trigger start of cycle
+
+  // Trigger if it's an active day, we're within [schedule, schedule+catchup),
+  // and we haven't already run today.
+  bool inWindow = (nowMins >= schedMins) && (nowMins < schedMins + CATCHUP_MINUTES);
+  if (todayActive && inWindow && dayKey != lastAutoRunDayKey && state.runCycle == false) {  // trigger start of cycle
+    lastAutoRunDayKey = dayKey;
     allOff();
     timer.cancel();  // cancel any manual operations
     state.start_time_ms = millis();
 
     //expand watering time .3 to 3x over a 40-90 average degree temp range, map it into milli seconds
-    state.temp_adjust = map((int32_t)state.avg_temp, 40, 90, 300, 3000);
+    if (state.tempScaling)
+      state.temp_adjust = map((int32_t)state.avg_temp, 40, 90, 300, 3000);
+    else
+      state.temp_adjust = 1000;  // 1.0x: run times used as-is
+
+    timer.in(4800000, shutOff);  // safety: force all valves off 80 min after cycle start
     state.runCycle = true;
   }
 
   if (state.runCycle == true) {  // run watering cycle if is time
 
-    timer.in(4800000, shutOff);  // for safety, turn off automatically after 80 min
     if (millis() >= START1 && millis() < START2) relayOn(0);
     else if (millis() >= START2 && millis() < START3) relayOn(1);
     else if (millis() >= START3 && millis() < START4) relayOn(2);
@@ -105,13 +130,18 @@ void controlRelays() {
   }
 }
 
-bool haveRan = false;
-// compute average temperature
-void ComputeAveTemp(void) {
+// True once the hourly temperature sample has been taken for the current hour;
+// cleared a second later so it re-arms for the next hour.
+bool hourlySampleTaken = false;
 
-  time_t t = now();                                            // Store the current time atomically
-  if (minute(t) == 0 && second(t) == 0 && haveRan == false) {  // do once each hour
-    haveRan = true;
+// Sample the current temperature into the 24-hour history and recompute the
+// rolling average that drives temperature-based run-time scaling. Runs once
+// per hour.
+void updateHourlyTempAverage(void) {
+
+  time_t t = now();                                                      // Store the current time atomically
+  if (minute(t) == 0 && second(t) == 0 && hourlySampleTaken == false) {  // do once each hour
+    hourlySampleTaken = true;
 
     // samples temp and computes the average of the last 24 hours
     dayBuffer.push(state.cur_temp);
@@ -125,5 +155,5 @@ void ComputeAveTemp(void) {
     }
     state.avg_temp = state.avg_temp / dayBuffer.size();
 
-  } else if (minute(t) == 0 && second(t) > 0) haveRan = false;  // clear for run next hour
+  } else if (minute(t) == 0 && second(t) > 0) hourlySampleTaken = false;  // clear for run next hour
 }

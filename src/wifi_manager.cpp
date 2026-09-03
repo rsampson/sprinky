@@ -17,11 +17,27 @@ const unsigned long WIFI_CONNECT_TIMEOUT =
 const unsigned long WIFI_CHECK_INTERVAL =
     10000; // Check connection integrity every 10 seconds
 
-char IP[] = "xxx.xxx.xxx.xxx"; // IP address string
+char ipStr[] = "xxx.xxx.xxx.xxx"; // local IP as text, filled in on connect
 
 String stored_ssid;
 String stored_pass;
 bool ap_mode = true;
+
+// Track link up/down transitions so the Status-page log can show how long the
+// link had been up when it dropped, and how long it was down when it recovered.
+static unsigned long wifiConnectedSince = 0; // millis() when link last came up
+static unsigned long wifiDownSince = 0;      // millis() when link last dropped
+
+// Render a millis() delta compactly for a log line: "45s", "6m", "3h12m".
+static String humanDur(unsigned long ms) {
+  unsigned long s = ms / 1000;
+  if (s < 60)
+    return String(s) + "s";
+  unsigned long m = s / 60;
+  if (m < 60)
+    return String(m) + "m";
+  return String(m / 60) + "h" + String(m % 60) + "m";
+}
 
 #include <Preferences.h>
 extern Preferences preferences;
@@ -66,8 +82,10 @@ void setupWiFi() {
     currentWifiState = WIFI_STATE_CONNECTED;
     ap_mode = false;
     IPAddress ip = WiFi.localIP(); // display ip address
-    ip.toString().toCharArray(IP, 16);
-    webPrint("Wifi up, IP address = %s \n", IP);
+    ip.toString().toCharArray(ipStr, 16);
+    webPrint("Wifi up, IP address = %s \n", ipStr);
+    webPrint("WiFi RSSI %d dBm\n", WiFi.RSSI());
+    wifiConnectedSince = millis();
     Serial.print(WiFi.RSSI());
     Serial.println(" dbm");
     // Disable auto-reconnect as we are managing it with our custom, robust
@@ -140,10 +158,18 @@ void handleWiFi() {
       Serial.print(WiFi.RSSI());
       Serial.println(" dBm");
 
+      if (wifiDownSince == 0)
+        webPrint("WiFi back: %d dBm (initial)\n", WiFi.RSSI());
+      else
+        webPrint("WiFi back: %d dBm (down %s)\n", WiFi.RSSI(),
+                 humanDur(currentMillis - wifiDownSince).c_str());
+      wifiConnectedSince = currentMillis;
+
       wifiStateTimer = currentMillis; // reset timer for periodic checks
       currentWifiState = WIFI_STATE_CONNECTED;
     } else if (currentMillis - wifiStateTimer >= WIFI_CONNECT_TIMEOUT) {
       Serial.println("WiFi: Connection timeout reached. Retrying...");
+      webPrint("WiFi connect timed out, retrying\n");
       currentWifiState = WIFI_STATE_DISCONNECTED;
     }
     break;
@@ -156,10 +182,12 @@ void handleWiFi() {
 
       if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi: Connection lost! Triggering reconnection...");
-        webPrint("WiFi: Connection lost! Triggering reconnection...\n");
+        webPrint("WiFi lost: %d dBm, up %s\n", WiFi.RSSI(),
+                 humanDur(currentMillis - wifiConnectedSince).c_str());
+        wifiDownSince = currentMillis;
 
         currentWifiState = WIFI_STATE_DISCONNECTED;
-      } 
+      }
     }
     break;
   }

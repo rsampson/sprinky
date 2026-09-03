@@ -17,8 +17,9 @@ inline constexpr size_t bufferSize = 400;
 
 // --- Sprinkler Runtime State Struct ---
 struct SprinklerState {
-  bool disable;
+  bool wateringDisabled;  // master off switch; when true, no valve ever opens
   bool runCycle;
+  bool tempScaling;  // when true, scale valve run times by 24h avg temp; when false, run times as-is
   uint16_t runHour;
   uint16_t runMinute;
   unsigned long runtime[8];
@@ -48,11 +49,10 @@ extern char charBuf[bufferSize];
 
 // --- Function Prototypes ---
 int getTempF();
-void connectWifi();
 void fetchDebugText();
 
 // Relay Action Prototypes
-void ComputeAveTemp();
+void updateHourlyTempAverage();
 void controlRelays();
 void relayConfig();
 void relayOn(int relay_index);

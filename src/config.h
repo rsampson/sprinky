@@ -20,10 +20,10 @@ static constexpr uint8_t NUM_RELAYS = sizeof(relay) / sizeof(relay[0]) ;
 
 #define DS18B20
 
-// These may need redefining depending on the board you are using. 
-// The default values below work for the board I have.
-#define ON HIGH
-#define OFF LOW
+// Relay active level. Some relay boards are active-low (a LOW signal closes the
+// relay contact / opens the valve). Swap these if your valves energize backwards.
+#define RELAY_ACTIVE HIGH
+#define RELAY_INACTIVE LOW
 
 // --- Buffer Configs ---
 constexpr size_t BOOT_REASON_MESSAGE_SIZE = 150;

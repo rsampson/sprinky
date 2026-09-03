@@ -32,6 +32,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
         <div class="card-label">Outside Temp</div>
         <div id="temp" class="card-value">-- °F</div>
         <div id="avgtemp" class="card-sub"></div>
+        <button id="temp-unit" type="button" class="btn small">°F / °C</button>
       </div>
       <div class="card">
         <div class="card-label">WiFi Signal</div>
@@ -85,8 +86,26 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <div class="card-label">Valve Names &amp; Run Times</div>
       <div id="valve-config"></div>
       <div id="valve-total" class="valve-total"></div>
-      <button id="save-schedule" class="btn primary">Save Schedule</button>
-      <span id="save-schedule-status" class="save-status"></span>
+
+      <div class="subgroup">
+        <div class="form-row">
+          <label for="season">Season profile</label>
+          <select id="season">
+            <option value="0">Summer</option>
+            <option value="1">Fall</option>
+            <option value="2">Winter</option>
+            <option value="3">Spring</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button id="save-schedule" class="btn primary">Save this season</button>
+          <span id="save-schedule-status" class="save-status"></span>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="temp-scaling" type="button" class="btn">Temperature scaling: --</button>
+      </div>
     </div>
   </section>
 
@@ -119,6 +138,12 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
           <option value="MST">US Mountain</option>
           <option value="AZT">Arizona</option>
           <option value="PST">US Pacific</option>
+          <option value="BRT">Brazil (S&atilde;o Paulo)</option>
+          <option value="SAST">South Africa</option>
+          <option value="GST">Gulf (Dubai)</option>
+          <option value="IST">India</option>
+          <option value="CNST">China</option>
+          <option value="JST">Japan</option>
         </select>
       </div>
     </div>
@@ -305,6 +330,20 @@ pre#log {
 .form-row input[type="number"] { max-width: 5rem; flex: none; }
 .form-row input[type="range"] { flex: 1; }
 
+/* Groups a related control cluster (e.g. season selector + its Save button)
+   and keeps it clear of adjacent buttons/rows. */
+.subgroup {
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 0.75rem;
+  margin: 0.75rem 0;
+}
+.subgroup > :first-child { margin-top: 0; }
+
+/* A button on its own line with breathing room above it. */
+.btn-row { margin-top: 0.75rem; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.btn-row .save-status { margin-left: 0; }
+
 .day-checkboxes {
   display: flex;
   flex-wrap: wrap;
@@ -334,14 +373,30 @@ pre#log {
   border-bottom: 1px solid var(--border);
 }
 .valve-row:last-child { border-bottom: none; }
+.valve-name-wrap { position: relative; display: inline-flex; align-items: center; }
+.valve-name-wrap::before {
+  content: "\270E";  /* pencil: hints the field is editable */
+  position: absolute;
+  left: 0.55rem;
+  font-size: 0.8rem;
+  color: var(--text-sub);
+  pointer-events: none;
+}
 .valve-row input[type="text"] {
-  width: 8rem;
-  padding: 0.4rem 0.5rem;
+  width: 9rem;
+  padding: 0.45rem 0.55rem 0.45rem 1.6rem;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   background: var(--bg);
   color: var(--text);
   font-size: 0.85rem;
+  box-shadow: inset 0 -1px 0 var(--text-sub);
+}
+.valve-row input[type="text"]::placeholder { color: var(--text-sub); opacity: 1; }
+.valve-row input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
 }
 .valve-row .runtime-val { min-width: 3.5rem; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.85rem; color: var(--text-sub); }
 
@@ -358,6 +413,7 @@ pre#log {
 }
 .btn.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
 .btn.danger { background: var(--danger); color: var(--accent-contrast); border-color: var(--danger); }
+.btn.small { padding: 0.3rem 0.6rem; font-size: 0.8rem; margin-top: 0.5rem; }
 .save-status { font-size: 0.8rem; color: var(--text-sub); margin-left: 0.6rem; }
 .valve-total { font-size: 0.85rem; color: var(--text-sub); margin: 0.5rem 0 0.75rem; }
 )CSS";
@@ -367,9 +423,35 @@ const char APP_JS[] PROGMEM = R"JS(
   let numValves = 0;
   let configBuilt = false;
   let activeDays = 0x7F;
+  let curSeason = 0;  // active season profile shown in the Valves tab
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+  // Outside-temp display unit. The API always reports Fahrenheit; the toggle
+  // button converts client-side. lastTempF/lastAvgTempF hold the most recent
+  // reading so a unit switch can re-render without waiting for the next poll.
+  let useCelsius = false;
+  let lastTempF = null;
+  let lastAvgTempF = null;
+
+  // Latest temperature-scaling on/off state from /api/status, for the toggle button.
+  let tempScaling = true;
+
   const $ = (id) => document.getElementById(id);
+
+  $('temp-unit').addEventListener('click', () => {
+    useCelsius = !useCelsius;
+    renderTemp();
+  });
+
+  // Redraw the Outside Temp card from the last reading, in the selected unit.
+  function renderTemp() {
+    if (lastTempF === null) return;
+    const unit = useCelsius ? ' °C' : ' °F';
+    const cur = useCelsius ? (lastTempF - 32) * 5 / 9 : lastTempF;
+    const avg = useCelsius ? (lastAvgTempF - 32) * 5 / 9 : lastAvgTempF;
+    $('temp').textContent = Math.round(cur) + unit;
+    $('avgtemp').textContent = '24h avg: ' + avg.toFixed(1) + unit;
+  }
 
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -420,14 +502,14 @@ const char APP_JS[] PROGMEM = R"JS(
       const row = document.createElement('div');
       row.className = 'valve-row';
       row.innerHTML =
-        '<input type="text" id="valve-name-' + i + '" value="" maxlength="14">' +
+        '<span class="valve-name-wrap">' +
+          '<input type="text" id="valve-name-' + i + '" value="" maxlength="14" ' +
+          'placeholder="Valve ' + (i + 1) + ' name" ' +
+          'aria-label="Name for valve ' + (i + 1) + '" ' +
+          'title="Tap to rename this valve"></span>' +
         '<input type="range" id="valve-slider-' + i + '" min="0.25" max="15" step="0.25" value="5">' +
         '<span class="runtime-val" id="valve-runtime-' + i + '"></span>';
       configEl.appendChild(row);
-
-      $('valve-name-' + i).value = v.name;
-      $('valve-slider-' + i).value = secToMin(v.runtime);
-      $('valve-runtime-' + i).textContent = fmtMinutes(secToMin(v.runtime));
 
       $('valve-slider-' + i).addEventListener('input', (e) => {
         $('valve-runtime-' + i).textContent = fmtMinutes(parseFloat(e.target.value));
@@ -435,8 +517,19 @@ const char APP_JS[] PROGMEM = R"JS(
       });
     });
 
-    updateValveTotal();
+    fillValveFields(valves);
     configBuilt = true;
+  }
+
+  // Populate the existing valve rows from a status `valves` array. Split out of
+  // buildValveUI so a season switch can refresh the values without rebuilding.
+  function fillValveFields(valves) {
+    valves.forEach((v, i) => {
+      $('valve-name-' + i).value = v.name;
+      $('valve-slider-' + i).value = secToMin(v.runtime);
+      $('valve-runtime-' + i).textContent = fmtMinutes(secToMin(v.runtime));
+    });
+    updateValveTotal();
   }
 
   function buildDayCheckboxes() {
@@ -482,13 +575,18 @@ const char APP_JS[] PROGMEM = R"JS(
     }
     $('time').textContent = s.time;
     $('tz').textContent = s.timezone;
-    $('temp').textContent = s.tempF + ' °F';
-    $('avgtemp').textContent = '24h avg: ' + s.avgTempF.toFixed(1) + ' °F';
+    lastTempF = s.tempF;
+    lastAvgTempF = s.avgTempF;
+    renderTemp();
     $('rssi').textContent = s.rssi + ' dBm';
     $('runtime').textContent = s.lastRunMinutes + ' min';
 
     $('water-toggle').checked = !s.disabled;
     $('water-state').textContent = s.disabled ? 'Watering OFF' : 'Watering ON';
+
+    tempScaling = s.tempScaling;
+    $('temp-scaling').textContent = 'Temperature scaling: ' + (tempScaling ? 'ON' : 'OFF');
+    $('temp-scaling').classList.toggle('primary', tempScaling);
 
     $('log').textContent = s.log;
 
@@ -498,6 +596,16 @@ const char APP_JS[] PROGMEM = R"JS(
       $('run-hour').value = s.runHour;
       $('run-minute').value = s.runMinute;
       applyActiveDays(s.activeDays);
+      curSeason = s.season;
+      $('season').value = String(s.season);
+    } else if (s.season !== curSeason && document.activeElement !== $('season')) {
+      // Season changed on the device (e.g. another client) - resync the whole card.
+      curSeason = s.season;
+      $('season').value = String(s.season);
+      $('run-hour').value = s.runHour;
+      $('run-minute').value = s.runMinute;
+      applyActiveDays(s.activeDays);
+      fillValveFields(s.valves);
     }
 
     s.valves.forEach((v, i) => {
@@ -531,6 +639,34 @@ const char APP_JS[] PROGMEM = R"JS(
     fetch('/api/run', { method: 'POST' }).then(refresh);
   });
 
+  $('temp-scaling').addEventListener('click', () => {
+    fetch('/api/tempscaling', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !tempScaling }),
+    }).then(refresh);
+  });
+
+  // Changing the season loads that profile's saved schedule and applies it.
+  $('season').addEventListener('change', (e) => {
+    const season = parseInt(e.target.value, 10);
+    fetch('/api/season', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ season: season }),
+    })
+      .then(() => fetch('/api/status'))
+      .then((r) => r.json())
+      .then((s) => {
+        curSeason = s.season;
+        $('season').value = String(s.season);
+        $('run-hour').value = s.runHour;
+        $('run-minute').value = s.runMinute;
+        applyActiveDays(s.activeDays);
+        fillValveFields(s.valves);
+      });
+  });
+
   $('save-schedule').addEventListener('click', () => {
     const valves = [];
     for (let i = 0; i < numValves; i++) {
@@ -540,6 +676,7 @@ const char APP_JS[] PROGMEM = R"JS(
       });
     }
     const body = {
+      season: curSeason,
       hour: parseInt($('run-hour').value, 10),
       minute: parseInt($('run-minute').value, 10),
       activeDays: activeDays,
@@ -550,7 +687,8 @@ const char APP_JS[] PROGMEM = R"JS(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }).then(() => {
-      $('save-schedule-status').textContent = 'Saved';
+      const label = $('season').selectedOptions[0].text;
+      $('save-schedule-status').textContent = 'Saved ' + label;
       setTimeout(() => { $('save-schedule-status').textContent = ''; }, 2000);
     });
   });

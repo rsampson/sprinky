@@ -20,6 +20,12 @@ extern Timezone usCT;
 extern Timezone usMT;
 extern Timezone usAZ;
 extern Timezone usPT;
+extern Timezone tzIST;
+extern Timezone tzJST;
+extern Timezone tzCN;
+extern Timezone tzGST;
+extern Timezone tzSAST;
+extern Timezone tzBRT;
 
 extern String Days[];
 
@@ -28,4 +34,4 @@ void printTZ();
 Timezone *TZstringToPointer(String tzstring);
 String tzName();
 String tzCode();
-time_t getNtpTime();
+time_t currentLocalTime();

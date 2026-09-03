@@ -26,9 +26,9 @@ static const uint8_t relay[NUM_RELAYS] = { 32, 33, 25, 26, 27, 14, 12, 13 };
 Replace those pin numbers with whichever GPIO pins your board actually
 wires to its relay inputs (check your board's silkscreen or datasheet),
 set `RELAY8` (below) to match how many valves you have, and you're
-running. Everything else — scheduling, the web UI, WiFi setup, temperature
-scaling, OTA updates — works identically regardless of which board you
-used.
+running. Everything else — scheduling, seasonal profiles, the web UI,
+WiFi setup, temperature scaling, OTA updates — works identically
+regardless of which board you used.
 
 <p align="center">
   <img src="../images/controller_board.jpg" alt="An example 8-relay ESP32 controller board wired up in an enclosure" width="60%">
@@ -47,35 +47,43 @@ below for what to expect if you skip it.
 - A relay board (4 or 8 channel) to switch your sprinkler valves' solenoids
 - *(Optional)* A DS18B20 temperature sensor, or a simple analog diode
   wired to an ADC pin, for temperature-adjusted watering
-- A USB cable and the Arduino IDE (or `arduino-cli`) to flash the firmware
+- A USB cable to flash the firmware the first time (updates after that can
+  go over WiFi — see [Firmware updates](#firmware-updates))
 
 No app to install, no cloud account, no subscription. Once flashed, you
 control everything from a web page served by the device itself.
 
 ## Quick start
 
-1. **Install the Arduino IDE** (2.x) and add ESP32/ESP8266 board support
-   via the Boards Manager if you haven't already.
-2. **Install the required libraries** through the Arduino Library
-   Manager (Sketch → Include Library → Manage Libraries): ESPAsyncWebServer
-   (the actively-maintained `ESP32Async` fork), ArduinoJson, ElegantOTA,
-   arduino-timer, CircularBuffer, NTPClient, Timezone, and — if you're
-   using a DS18B20 sensor — DallasTemperature and OneWire. See
-   [CLAUDE.md](CLAUDE.md) for the full pinned dependency list.
-3. **Set `ELEGANTOTA_USE_ASYNC_WEBSERVER` to `1`** for the ElegantOTA
-   library — this is required so OTA updates share the same web server as
-   the dashboard. (See the [ElegantOTA docs](https://github.com/ayushsharma82/ElegantOTA).)
-4. **Edit `config.h`** for your hardware (see [Configuring your hardware](#configuring-your-hardware)
+This is a [PlatformIO](https://platformio.org/) project. There is no
+`.ino` sketch — the firmware is the `src/*.cpp` / `src/*.h` files (this
+README and `config.h` are in `src/` too), and all library versions are
+pinned in `platformio.ini`.
+
+1. **Install PlatformIO** — either the
+   [PlatformIO IDE extension for VS Code](https://platformio.org/install/ide?install=vscode)
+   or the CLI (`pip install platformio`).
+2. **Open the project folder.** PlatformIO reads `platformio.ini` and
+   downloads every pinned dependency automatically the first time you
+   build — nothing to install by hand. (The required
+   `ELEGANTOTA_USE_ASYNC_WEBSERVER=1` flag is already set there in
+   `build_flags`, so OTA updates share the dashboard's web server.)
+3. **Edit `config.h`** for your hardware (see [Configuring your hardware](#configuring-your-hardware)
    below) — at minimum, set the `relay[]` pin array to match your board's
    wiring and set `RELAY8` to match your valve count.
-5. **Flash the sketch** to your board over USB.
-6. **Connect to the controller.** On first boot (or any time it can't
+4. **Build and flash over USB:**
+   - ESP8266: `pio run -e esp12e -t upload`
+   - ESP32: `pio run -e esp32dev -t upload`
+
+   (In the VS Code extension, pick the environment and hit Upload.) Watch
+   the serial log with `pio device monitor` (115200 baud).
+5. **Connect to the controller.** On first boot (or any time it can't
    connect to a saved WiFi network), it creates its own WiFi access point
    named after `HOSTNAME` in `config.h`, reachable at `192.168.4.1`.
    Connect to that network with your phone or laptop, open
    `http://192.168.4.1` in a browser, and enter your home WiFi's SSID and
    password on the Setup tab.
-7. **Reboot** (or it will reconnect automatically) and the controller
+6. **Reboot** (or it will reconnect automatically) and the controller
    joins your WiFi network. From then on, find it at
    `http://<HOSTNAME>.local/` (mDNS) from any device on the same network.
 
@@ -87,15 +95,20 @@ re-flashing required.
 
 Once connected, the web dashboard has three tabs:
 
-- **Status** — current time, outside temperature, 24-hour average
-  temperature, WiFi signal strength, last completed run's total duration,
-  a master watering on/off switch, and a live debug log.
+- **Status** — current time, outside temperature (with a °F / °C toggle
+  button), 24-hour average temperature, WiFi signal strength, last
+  completed run's total duration, a master watering on/off switch, and a
+  live debug log.
 - **Valves** — a "test" button per valve (runs it for up to a minute,
   useful for checking wiring or manually watering one zone), an editable
   name and run-time slider per valve, which days of the week the schedule
   is allowed to run on, the daily start time, and a "Run Watering Sequence
-  Now" button to trigger the full schedule on demand.
-- **Setup** — WiFi credentials, time zone selection, a link to the
+  Now" button to trigger the full schedule on demand. This tab also has a
+  **Temperature scaling** on/off toggle and a **season profile** selector
+  (see [Seasonal schedule profiles](#seasonal-schedule-profiles) below).
+- **Setup** — WiFi credentials, time zone selection (US zones plus common
+  world zones — UK/GMT, Central European, Moscow, Australia Eastern,
+  Brazil, South Africa, Gulf/Dubai, India, China, Japan), a link to the
   firmware update page, and a reboot button.
 
 <p align="center">
@@ -117,22 +130,42 @@ after a fixed maximum (80 minutes), and any manually-triggered valve test
 automatically shuts off after a minute, so a network hiccup or a
 forgotten browser tab can't leave a valve running indefinitely.
 
+## Seasonal schedule profiles
+
+The Valves tab has a **season profile** selector (Summer / Fall / Winter /
+Spring). Each season stores its own complete schedule — start time, active
+days, and every valve's name and run time — so you can set watering up
+once per season and switch between them instead of re-entering everything.
+
+- **Selecting a season** immediately loads that profile's saved schedule
+  and makes it the active one. The controller keeps running the
+  last-selected season across reboots.
+- **"Save this season"** writes the fields currently on screen into the
+  selected season's slot.
+- Only one profile is active at a time — Sprinky does **not** switch
+  seasons automatically by date; you pick the season when it changes.
+
+On first boot after updating to this firmware, your existing schedule is
+copied into the **Summer** profile, so nothing is lost.
+
+The Temperature scaling toggle is a single global setting, not per-season.
+
 ## Temperature-adjusted watering
 
 Sprinky keeps a rolling 24-hour average outdoor temperature and scales
 each valve's run time accordingly — longer waterings on hot days, shorter
 on cool ones. The reading comes from a DS18B20 digital sensor if you
 define `DS18B20` in `config.h` and wire one up, or otherwise from a
-simple analog diode on the ADC pin.
+simple analog diode on the ADC pin. The Status tab shows the temperature
+in either Fahrenheit or Celsius — use the °F / °C button on that card to
+switch.
 
-If you don't want to wire up either sensor, leave `DS18B20` undefined —
-but be aware the analog fallback reads whatever voltage happens to be on
-the ADC pin, and with nothing connected that can be a meaningless (and
-possibly unstable) value, which feeds directly into the run-time scaling.
-There's currently no setting to disable temperature scaling outright, so
-if you're skipping a sensor, it's worth wiring the ADC pin to a fixed
-voltage (or checking the reported temperature on the dashboard looks sane)
-rather than leaving it floating.
+If you don't want to wire up either sensor, turn **Temperature scaling**
+off on the Valves tab — run times are then used exactly as you set them,
+regardless of the reported temperature. (Leaving scaling on with no sensor
+and `DS18B20` undefined means the analog fallback reads whatever voltage
+happens to be on the ADC pin, which can be a meaningless and unstable
+value feeding straight into the run-time scaling.)
 
 ## Configuring your hardware
 
