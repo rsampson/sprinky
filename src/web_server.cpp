@@ -30,7 +30,7 @@ static void handleStatus(AsyncWebServerRequest *request) {
   doc["time"] = timeBuf;
   doc["timezone"] = tzName();
   doc["timezoneCode"] = tzCode();
-  doc["tempF"] = getTempF();
+  doc["tempF"] = (int)state.cur_temp;
   doc["avgTempF"] = state.avg_temp;
   doc["rssi"] = WiFi.RSSI();
   doc["lastRunMinutes"] = state.lastRunMinutes;

@@ -378,6 +378,18 @@ const char APP_JS[] PROGMEM = R"JS(
     });
   });
 
+  // The valve run-time sliders are shown to the user in fractional minutes to
+  // make setting them more natural; everything else (API, state, schedule)
+  // stays in whole seconds. secToMin()/minToSec() convert at that boundary.
+  function secToMin(sec) { return sec / 60; }
+  function minToSec(min) { return Math.round(min * 60); }
+  function fmtMinutes(min) {
+    // up to two decimals, but drop trailing zeros and a bare decimal point:
+    // 5 -> "5 min", 2.5 -> "2.5 min", 0.25 -> "0.25 min"
+    const s = (Math.round(min * 100) / 100).toFixed(2).replace(/\.?0+$/, '');
+    return (s === '' ? '0' : s) + ' min';
+  }
+
   function buildValveUI(valves) {
     numValves = valves.length;
     const buttonsEl = $('valve-buttons');
@@ -397,16 +409,16 @@ const char APP_JS[] PROGMEM = R"JS(
       row.className = 'valve-row';
       row.innerHTML =
         '<input type="text" id="valve-name-' + i + '" value="" maxlength="14">' +
-        '<input type="range" id="valve-slider-' + i + '" min="1" max="600" value="300">' +
+        '<input type="range" id="valve-slider-' + i + '" min="0.25" max="15" step="0.25" value="5">' +
         '<span class="runtime-val" id="valve-runtime-' + i + '"></span>';
       configEl.appendChild(row);
 
       $('valve-name-' + i).value = v.name;
-      $('valve-slider-' + i).value = v.runtime;
-      $('valve-runtime-' + i).textContent = v.runtime + 's';
+      $('valve-slider-' + i).value = secToMin(v.runtime);
+      $('valve-runtime-' + i).textContent = fmtMinutes(secToMin(v.runtime));
 
       $('valve-slider-' + i).addEventListener('input', (e) => {
-        $('valve-runtime-' + i).textContent = e.target.value + 's';
+        $('valve-runtime-' + i).textContent = fmtMinutes(parseFloat(e.target.value));
       });
     });
 
@@ -506,7 +518,7 @@ const char APP_JS[] PROGMEM = R"JS(
     for (let i = 0; i < numValves; i++) {
       valves.push({
         name: $('valve-name-' + i).value,
-        runtime: parseInt($('valve-slider-' + i).value, 10),
+        runtime: minToSec(parseFloat($('valve-slider-' + i).value)),
       });
     }
     const body = {

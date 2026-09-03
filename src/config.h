@@ -1,11 +1,11 @@
 #pragma once
 
 // --- Device Configuration ---
-constexpr const char *HOSTNAME = "testsprinky";
+constexpr const char *HOSTNAME = "sprinky2";
 #define LED_BUILTIN 2 // For ESP32 dev module, change if using different board
 
 // --- Hardware Profile Flags ---
-#define RELAY8
+//#define RELAY8
 
 #ifdef RELAY8
 static constexpr uint8_t NUM_RELAYS = 8;
@@ -25,8 +25,6 @@ static const uint8_t  relay[NUM_RELAYS] = { 16, 14, 12, 13 };
 
 #define DS18B20
 
-// #define USE_WITH_HA // Add feature to be controlled by Home Assistant
-
 // #define ON LOW
 // #define OFF HIGH
 
@@ -35,10 +33,3 @@ static const uint8_t  relay[NUM_RELAYS] = { 16, 14, 12, 13 };
 
 // --- Buffer Configs ---
 constexpr size_t BOOT_REASON_MESSAGE_SIZE = 150;
-
-// --- Home Assistant Configs ---
-#ifdef USE_WITH_HA
-#define BROKER_ADDR IPAddress(192, 168, 0, 223)
-#define BROKER_USERNAME "mqtt_user"
-#define BROKER_PASSWORD "squid6562"
-#endif

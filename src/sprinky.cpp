@@ -11,6 +11,8 @@
 // board, otherwise strange results may occur.
 
 
+#include <Arduino.h>
+
 #include "sprinky.h"
 
 
@@ -27,29 +29,6 @@
   Serial
 #define TEMP_PIN D1
 // #define RELAY8  // some esp8266 boards may have 8 relays
-#endif
-
-WiFiClient client;
-
-
-#ifdef USE_WITH_HA
-#include <ArduinoHA.h>
-#define ARDUINOHA_DEBUG
-HADevice device;
-HAMqtt mqtt(client, device);
-HASensorNumber analogSensor("GardenTemperature", HASensorNumber::PrecisionP1);
-HASwitch switch1("valve1");
-HASwitch switch2("valve2");
-HASwitch switch3("valve3");
-HASwitch switch4("valve4");
-#ifdef RELAY8
-HASwitch switch5("valve5");
-HASwitch switch6("valve6");
-HASwitch switch7("valve7");
-HASwitch switch8("valve8");
-HASwitch
-  switch9("disableSwitch");  // to turn the stand alone watering controller off
-#endif
 #endif
 
 #include <Preferences.h>
@@ -81,6 +60,7 @@ SprinklerState state = { .disable = false,
                          .runtime = { 300, 300, 300, 300, 300, 300, 300, 300 },
                          .start_time_ms = 0,
                          .temp_adjust = 1000,
+                         .cur_temp = 70.0f,
                          .avg_temp = 65.0f,
                          .lastRunMinutes = 0,
                          .activeDays = 0x7F };
@@ -120,10 +100,6 @@ int getTempF() {
                   // tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k /
                   // 5v)
   }
-#endif
-#ifdef USE_WITH_HA
-  // report temperature to home assistant
-  analogSensor.setValue(tempF);
 #endif
   return (tempF);
 }
@@ -194,100 +170,6 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
 char bootReasonMessage[BOOT_REASON_MESSAGE_SIZE];
 String bootTime;
 
-#ifdef USE_WITH_HA
-
-void onMqttMessage(const char *topic, const uint8_t *payload, uint16_t length) {
-  // This callback is called when message from MQTT broker is received.
-  // Please note that you should always verify if the message's topic is the one
-  // you expect. For example: if (memcmp(topic, "myCustomTopic") == 0) { ... }
-
-  Serial.print("New message on topic: ");
-  Serial.println(topic);
-  Serial.print("Data: ");
-  Serial.println((const char *)payload);
-
-  mqtt.publish("myPublishTopic", "hello");
-}
-
-void onMqttConnected() {
-  Serial.println("Connected to the broker!");
-
-  // You can subscribe to custom topic if you need
-  mqtt.subscribe("myCustomTopic");
-}
-
-void onMqttDisconnected() {
-  Serial.println("Disconnected from the broker!");
-}
-
-void onMqttStateChanged(HAMqtt::ConnectionState state) {
-  Serial.print("MQTT state changed to: ");
-  Serial.println(static_cast<int8_t>(state));
-}
-
-// Array of valve switch pointers for easy indexing
-static HASwitch *valveSwitches[] = {
-  &switch1,
-  &switch2,
-  &switch3,
-  &switch4,
-#ifdef RELAY8
-  &switch5,
-  &switch6,
-  &switch7,
-  &switch8,
-#endif
-};
-static constexpr int NUM_VALVE_SWITCHES =
-  sizeof(valveSwitches) / sizeof(valveSwitches[0]);
-
-// Turn off all valve switches in Home Assistant (report state back)
-static void allValveSwitchesOff() {
-  for (int i = 0; i < NUM_VALVE_SWITCHES; i++) {
-    valveSwitches[i]->setState(false);
-  }
-}
-
-void onValveSwitchCommand(bool switchState, HASwitch *sender) {
-  if (switchState) {
-    // Turning a valve ON — find which one and activate it
-    for (int i = 0; i < NUM_VALVE_SWITCHES; i++) {
-      if (sender == valveSwitches[i]) {
-        relayOn(i);
-        // Turn off all other valve switches in HA (only one valve at a time)
-        for (int j = 0; j < NUM_VALVE_SWITCHES; j++) {
-          if (j != i)
-            valveSwitches[j]->setState(false);
-        }
-        break;
-      }
-    }
-    timer.in(60000,
-             shutOff);  // turn off any manually activated valve after a minute
-  } else {
-    // Turning a valve OFF
-    allOff();
-    allValveSwitchesOff();
-  }
-  sender->setState(switchState);  // report state back to Home Assistant
-}
-
-void onDisableSwitchCommand(bool switchState, HASwitch *sender) {
-  if (sender == &switch9) {
-    // the switch9 has been toggled
-    // switchState == true means ON state (watering disabled)
-    if (switchState) {
-      state.disable = true;
-      preferences.putBool("disable", true);
-    } else {
-      state.disable = false;
-      preferences.putBool("disable", false);
-    }
-  }
-  sender->setState(switchState);  // report state back to Home Assistant
-}
-#endif  // USE_WITH_HA
-
 
 void setup() {
 
@@ -357,73 +239,6 @@ void setup() {
   getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
   webPrint("Reset reason: %s\n", bootReasonMessage);
 
-#ifdef USE_WITH_HA
-  // Unique ID must be set!
-  byte mac[6];
-  WiFi.macAddress(mac);
-  device.setUniqueId(mac, sizeof(mac));
-
-  String controllerName = HOSTNAME;
-  controllerName += "_Sprinkler_Control";
-  device.setName(controllerName.c_str());
-  device.enableSharedAvailability();
-  device.enableLastWill();
-
-  mqtt.onMessage(onMqttMessage);
-  mqtt.onConnected(onMqttConnected);
-  mqtt.onDisconnected(onMqttDisconnected);
-  mqtt.onStateChanged(onMqttStateChanged);
-
-  analogSensor.setIcon("mdi:thermometer");
-  analogSensor.setName("garden temperature");
-  analogSensor.setUnitOfMeasurement("F");
-
-  switch1.setIcon("mdi:water-pump");
-  switch1.setName("Valve1");
-  switch1.onCommand(onValveSwitchCommand);
-
-  switch2.setIcon("mdi:water-pump");
-  switch2.setName("Valve2");
-  switch2.onCommand(onValveSwitchCommand);
-
-  switch3.setIcon("mdi:water-pump");
-  switch3.setName("Valve3");
-  switch3.onCommand(onValveSwitchCommand);
-
-  switch4.setIcon("mdi:water-pump");
-  switch4.setName("Valve4");
-  switch4.onCommand(onValveSwitchCommand);
-
-  switch5.setIcon("mdi:water-pump");
-  switch5.setName("Valve5");
-  switch5.onCommand(onValveSwitchCommand);
-
-  switch6.setIcon("mdi:water-pump");
-  switch6.setName("Valve6");
-  switch6.onCommand(onValveSwitchCommand);
-
-  switch7.setIcon("mdi:water-pump");
-  switch7.setName("Valve7");
-  switch7.onCommand(onValveSwitchCommand);
-
-  switch8.setIcon("mdi:water-pump");
-  switch8.setName("Valve8");
-  switch8.onCommand(onValveSwitchCommand);
-
-  switch9.setName("Disable watering controller");
-  switch9.setIcon("mdi:water-off");
-  switch9.onCommand(onDisableSwitchCommand);
-
-  if (mqtt.begin(BROKER_ADDR, BROKER_USERNAME, BROKER_PASSWORD)) {
-    // mqtt.enableOTA();
-    // mqtt.onMessage(onMessage);
-    // mqtt.subscribe("sensors/#");
-    Serial.println("Connected to MQTT broker");
-  } else {
-    Serial.println("Failed to connect to MQTT broker");
-  }
-#endif  // USE_WITH_HA
-
   Serial.println("We Are Go!");
 }
 
@@ -431,9 +246,6 @@ long unsigned previousTime;
 
 void loop() {
 
-#ifdef USE_WITH_HA
-  mqtt.loop();
-#endif
   handleWiFi();
   timeClient.update();  // run ntp time client
   controlRelays();      // activate relay if correct time
@@ -441,6 +253,7 @@ void loop() {
 
   if (millis() > previousTime + 1000) {  // once per second housekeeping
     timer.tick();                        // tick the timer (to shut down valve tests after two minutes)
+    state.cur_temp = getTempF();         // sample sensor here (loop ctx); web handlers read the cache
     ComputeAveTemp();
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // toggle the LED
     previousTime = millis();

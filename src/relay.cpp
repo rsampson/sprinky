@@ -114,7 +114,7 @@ void ComputeAveTemp(void) {
     haveRan = true;
 
     // samples temp and computes the average of the last 24 hours
-    dayBuffer.push(getTempF());
+    dayBuffer.push(state.cur_temp);
 
     state.avg_temp = 0;
     // // the following ensures using the right type for the index variable

@@ -1,12 +1,11 @@
 # Sprinky
 
 A WiFi-connected landscape sprinkler controller for the ESP32 and ESP8266,
-with a clean web dashboard, temperature-adjusted watering times, and
-optional Home Assistant integration.
+with a clean web dashboard and temperature-adjusted watering times.
 
 <p align="center">
-  <img src="images/status_page.png" alt="Status tab of the Sprinky dashboard" width="32%">
-  <img src="images/setup_page.png" alt="Setup tab of the Sprinky dashboard" width="32%">
+  <img src="../images/status_page.png" alt="Status tab of the Sprinky dashboard" width="32%">
+  <img src="../images/setup_page.png" alt="Setup tab of the Sprinky dashboard" width="32%">
 </p>
 
 ## Why Sprinky is easy to set up
@@ -32,7 +31,7 @@ scaling, OTA updates — works identically regardless of which board you
 used.
 
 <p align="center">
-  <img src="images/controller_board.jpg" alt="An example 8-relay ESP32 controller board wired up in an enclosure" width="60%">
+  <img src="../images/controller_board.jpg" alt="An example 8-relay ESP32 controller board wired up in an enclosure" width="60%">
   <br>
   <em>An example 8-relay board wired into a weatherproof enclosure — any similar board works.</em>
 </p>
@@ -100,7 +99,7 @@ Once connected, the web dashboard has three tabs:
   firmware update page, and a reboot button.
 
 <p align="center">
-  <img src="images/valves_page.png" alt="Valves tab of the Sprinky dashboard" width="60%">
+  <img src="../images/valves_page.png" alt="Valves tab of the Sprinky dashboard" width="60%">
 </p>
 
 
@@ -146,22 +145,10 @@ All hardware-specific settings live in `config.h`:
 | `relay[]` | **The important one.** GPIO pin number for each relay/valve, in order. Must match your specific board's wiring. |
 | `ON` / `OFF` | Some relay boards are active-low (a `LOW` signal turns the relay on) and some are active-high. If your valves come on backwards from what you'd expect, swap these. |
 | `DS18B20` | Define this if you've wired up a DS18B20 digital temperature sensor. Leave undefined to read from a simple analog diode on the ADC pin instead (works with no sensor attached too, though readings won't be meaningful). If `DS18B20` is defined but the sensor isn't detected at boot, readings fall back to a fixed default value. |
-| `USE_WITH_HA` | Optional: enables Home Assistant integration over MQTT (see below). Off by default. |
 
 Everything else — the web dashboard, scheduling logic, OTA update
 mechanism, WiFi reconnect handling — works the same regardless of these
 settings.
-
-## Optional: Home Assistant integration
-
-Defining `USE_WITH_HA` in `config.h` adds MQTT-based Home Assistant
-integration (via the ArduinoHA library, an additional dependency only
-needed for this feature): each valve appears as a switch, outdoor
-temperature is reported as a sensor, and a dedicated switch can
-disable/enable the whole watering system. Set your MQTT broker address
-and credentials in the same block in `config.h`. This is entirely
-optional — the controller is fully usable standalone without Home
-Assistant or an MQTT broker.
 
 ## Firmware updates
 

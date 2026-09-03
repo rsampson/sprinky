@@ -25,6 +25,7 @@ struct SprinklerState {
 
   uint32_t start_time_ms;
   uint32_t temp_adjust;
+  float cur_temp;
   float avg_temp;
   uint32_t lastRunMinutes;
 
@@ -59,9 +60,3 @@ void allOff();
 void webPrint(const char *format, ...);
 bool shutOff(void *);
 // Time utility functions are declared in time_manager.h
-
-#ifdef USE_WITH_HA
-class HASwitch;
-void onValveSwitchCommand(bool switchState, HASwitch *sender);
-void onDisableSwitchCommand(bool switchState, HASwitch *sender);
-#endif
