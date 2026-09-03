@@ -10,7 +10,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>🌱 Sprinky</h1>
+  <h1>🌱 <span id="hostname">Sprinky</span></h1>
   <span id="conn" class="pill offline">offline</span>
 </header>
 
@@ -84,6 +84,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
     <div class="card wide">
       <div class="card-label">Valve Names &amp; Run Times</div>
       <div id="valve-config"></div>
+      <div id="valve-total" class="valve-total"></div>
       <button id="save-schedule" class="btn primary">Save Schedule</button>
       <span id="save-schedule-status" class="save-status"></span>
     </div>
@@ -358,6 +359,7 @@ pre#log {
 .btn.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
 .btn.danger { background: var(--danger); color: var(--accent-contrast); border-color: var(--danger); }
 .save-status { font-size: 0.8rem; color: var(--text-sub); margin-left: 0.6rem; }
+.valve-total { font-size: 0.85rem; color: var(--text-sub); margin: 0.5rem 0 0.75rem; }
 )CSS";
 
 const char APP_JS[] PROGMEM = R"JS(
@@ -390,6 +392,16 @@ const char APP_JS[] PROGMEM = R"JS(
     return (s === '' ? '0' : s) + ' min';
   }
 
+  // Sum every valve slider (values are in minutes) and show the running total
+  // just above the Save button. Called on initial render and on every drag.
+  function updateValveTotal() {
+    let total = 0;
+    for (let i = 0; i < numValves; i++) {
+      total += parseFloat($('valve-slider-' + i).value);
+    }
+    $('valve-total').textContent = 'Total watering time: ' + fmtMinutes(total);
+  }
+
   function buildValveUI(valves) {
     numValves = valves.length;
     const buttonsEl = $('valve-buttons');
@@ -419,9 +431,11 @@ const char APP_JS[] PROGMEM = R"JS(
 
       $('valve-slider-' + i).addEventListener('input', (e) => {
         $('valve-runtime-' + i).textContent = fmtMinutes(parseFloat(e.target.value));
+        updateValveTotal();
       });
     });
 
+    updateValveTotal();
     configBuilt = true;
   }
 
@@ -462,6 +476,10 @@ const char APP_JS[] PROGMEM = R"JS(
     $('conn').textContent = 'online';
     $('conn').className = 'pill online';
 
+    if (s.hostname) {
+      $('hostname').textContent = s.hostname;
+      document.title = s.hostname;
+    }
     $('time').textContent = s.time;
     $('tz').textContent = s.timezone;
     $('temp').textContent = s.tempF + ' °F';

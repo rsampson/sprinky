@@ -2,32 +2,26 @@
 
 // --- Device Configuration ---
 constexpr const char *HOSTNAME = "sprinky2";
-#define LED_BUILTIN 2 // For ESP32 dev module, change if using different board
-
-// --- Hardware Profile Flags ---
-//#define RELAY8
-
-#ifdef RELAY8
-static constexpr uint8_t NUM_RELAYS = 8;
-#else
-static constexpr uint8_t NUM_RELAYS = 4;
-#endif
 
 // this code should work with any esp32/esp8266 relay board that is available
 // from the usual chinese sources such as Alibaba. You will have to set up
 // the exact relay mapping for your board in the array below:
 
+//#define RELAY8  // comment this out if using a board with only 4 relays
 #ifdef RELAY8  // if using a board with 8 relays
-static const uint8_t  relay[NUM_RELAYS] = { 32, 33, 25, 26, 27, 14, 12, 13 };
+static const uint8_t  relay[] = { 32, 33, 25, 26, 27, 14, 12, 13 };
 #else  
-static const uint8_t  relay[NUM_RELAYS] = { 16, 14, 12, 13 };
+static const uint8_t  relay[] = { 16, 14, 12, 13 };
 #endif
+
+static constexpr uint8_t NUM_RELAYS = sizeof(relay) / sizeof(relay[0]) ;
+
+#define LED_BUILTIN 2 // For ESP32 dev module, change if using different board
 
 #define DS18B20
 
-// #define ON LOW
-// #define OFF HIGH
-
+// These may need redefining depending on the board you are using. 
+// The default values below work for the board I have.
 #define ON HIGH
 #define OFF LOW
 

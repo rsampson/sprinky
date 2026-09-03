@@ -27,6 +27,7 @@ static void handleStatus(AsyncWebServerRequest *request) {
   char timeBuf[20];
   time_t t = now();
   sprintf(timeBuf, "%02d:%02d:%02d %02d/%02d", hour(t), minute(t), second(t), month(t), day(t));
+  doc["hostname"] = HOSTNAME;
   doc["time"] = timeBuf;
   doc["timezone"] = tzName();
   doc["timezoneCode"] = tzCode();
