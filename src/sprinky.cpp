@@ -158,6 +158,7 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
 // Timezone rules, variables, and currentLocalTime() are now defined in
 // time_manager.cpp
 
+constexpr size_t BOOT_REASON_MESSAGE_SIZE = 150;
 char bootReasonMessage[BOOT_REASON_MESSAGE_SIZE];
 
 

@@ -37,6 +37,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <div class="card">
         <div class="card-label">WiFi Signal</div>
         <div id="rssi" class="card-value">-- dBm</div>
+        <div id="ip" class="card-sub"></div>
       </div>
       <div class="card">
         <div class="card-label">Last Run</div>
@@ -71,11 +72,13 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 
     <div class="card wide">
       <div class="card-label">Schedule</div>
+      <div class="card-sub" style="margin-bottom: 0.5rem">24-hour time &mdash; e.g. 19 = 7 PM</div>
       <div class="form-row">
         <label for="run-hour">Run hour</label>
         <input type="number" id="run-hour" min="0" max="23">
         <label for="run-minute">Run minute</label>
         <input type="number" id="run-minute" min="0" max="59">
+        <span id="run-time-12h" class="card-sub"></span>
       </div>
       <div class="card-label">Days to Water</div>
       <div id="day-checkboxes" class="day-checkboxes"></div>
@@ -443,6 +446,19 @@ const char APP_JS[] PROGMEM = R"JS(
     renderTemp();
   });
 
+  // Show the 24-hour Run hour/minute fields as a 12-hour time too, so an
+  // evening schedule entered as e.g. "7" doesn't silently run at 7 AM.
+  function renderRunTime12h() {
+    const h = parseInt($('run-hour').value, 10);
+    const m = parseInt($('run-minute').value, 10);
+    if (isNaN(h) || isNaN(m)) { $('run-time-12h').textContent = ''; return; }
+    const period = h < 12 ? 'AM' : 'PM';
+    const h12 = ((h % 12) || 12);
+    $('run-time-12h').textContent = '= ' + h12 + ':' + String(m).padStart(2, '0') + ' ' + period;
+  }
+  $('run-hour').addEventListener('input', renderRunTime12h);
+  $('run-minute').addEventListener('input', renderRunTime12h);
+
   // Redraw the Outside Temp card from the last reading, in the selected unit.
   function renderTemp() {
     if (lastTempF === null) return;
@@ -579,6 +595,7 @@ const char APP_JS[] PROGMEM = R"JS(
     lastAvgTempF = s.avgTempF;
     renderTemp();
     $('rssi').textContent = s.rssi + ' dBm';
+    $('ip').textContent = s.ip;
     $('runtime').textContent = s.lastRunMinutes + ' min';
 
     $('water-toggle').checked = !s.disabled;
@@ -595,6 +612,7 @@ const char APP_JS[] PROGMEM = R"JS(
       buildDayCheckboxes();
       $('run-hour').value = s.runHour;
       $('run-minute').value = s.runMinute;
+      renderRunTime12h();
       applyActiveDays(s.activeDays);
       curSeason = s.season;
       $('season').value = String(s.season);
@@ -604,6 +622,7 @@ const char APP_JS[] PROGMEM = R"JS(
       $('season').value = String(s.season);
       $('run-hour').value = s.runHour;
       $('run-minute').value = s.runMinute;
+      renderRunTime12h();
       applyActiveDays(s.activeDays);
       fillValveFields(s.valves);
     }
@@ -662,6 +681,7 @@ const char APP_JS[] PROGMEM = R"JS(
         $('season').value = String(s.season);
         $('run-hour').value = s.runHour;
         $('run-minute').value = s.runMinute;
+        renderRunTime12h();
         applyActiveDays(s.activeDays);
         fillValveFields(s.valves);
       });

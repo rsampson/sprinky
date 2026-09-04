@@ -51,6 +51,7 @@ static void handleStatus(AsyncWebServerRequest *request) {
   doc["tempF"] = (int)state.cur_temp;
   doc["avgTempF"] = state.avg_temp;
   doc["rssi"] = WiFi.RSSI();
+  doc["ip"] = WiFi.localIP().toString();
   doc["lastRunMinutes"] = state.lastRunMinutes;
   doc["disabled"] = state.wateringDisabled;
   doc["tempScaling"] = state.tempScaling;
