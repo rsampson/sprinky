@@ -4,8 +4,8 @@ A WiFi-connected landscape sprinkler controller for the ESP32 and ESP8266,
 with a clean web dashboard and temperature-adjusted watering times.
 
 <p align="center">
-  <img src="../images/status_page.png" alt="Status tab of the Sprinky dashboard" width="32%">
-  <img src="../images/setup_page.png" alt="Setup tab of the Sprinky dashboard" width="32%">
+  <img src="images/status_page.png" alt="Status tab of the Sprinky dashboard" width="32%">
+  <img src="images/setup_page.png" alt="Setup tab of the Sprinky dashboard" width="32%">
 </p>
 
 ## Why Sprinky is easy to set up
@@ -31,7 +31,7 @@ WiFi setup, temperature scaling, OTA updates — works identically
 regardless of which board you used.
 
 <p align="center">
-  <img src="../images/controller_board.jpg" alt="An example 8-relay ESP32 controller board wired up in an enclosure" width="60%">
+  <img src="images/controller_board.jpg" alt="An example 8-relay ESP32 controller board wired up in an enclosure" width="60%">
   <br>
   <em>An example 8-relay board wired into a weatherproof enclosure — any similar board works.</em>
 </p>
@@ -56,9 +56,9 @@ control everything from a web page served by the device itself.
 ## Quick start
 
 This is a [PlatformIO](https://platformio.org/) project. There is no
-`.ino` sketch — the firmware is the `src/*.cpp` / `src/*.h` files (this
-README and `config.h` are in `src/` too), and all library versions are
-pinned in `platformio.ini`.
+`.ino` sketch — the firmware is the `src/*.cpp` / `src/*.h` files
+(`config.h` is in `src/` too), and all library versions are pinned in
+`platformio.ini`.
 
 1. **Install PlatformIO** — either the
    [PlatformIO IDE extension for VS Code](https://platformio.org/install/ide?install=vscode)
@@ -96,23 +96,25 @@ re-flashing required.
 Once connected, the web dashboard has three tabs:
 
 - **Status** — current time, outside temperature (with a °F / °C toggle
-  button), 24-hour average temperature, WiFi signal strength, last
-  completed run's total duration, a master watering on/off switch, and a
-  live debug log.
+  button), 24-hour average temperature, WiFi signal strength and the
+  device's IP address, last completed run's total duration, a master
+  watering on/off switch, and a live debug log.
 - **Valves** — a "test" button per valve (runs it for up to a minute,
   useful for checking wiring or manually watering one zone), an editable
   name and run-time slider per valve, which days of the week the schedule
-  is allowed to run on, the daily start time, and a "Run Watering Sequence
-  Now" button to trigger the full schedule on demand. This tab also has a
-  **Temperature scaling** on/off toggle and a **season profile** selector
-  (see [Seasonal schedule profiles](#seasonal-schedule-profiles) below).
+  is allowed to run on, and the daily start time (entered in 24-hour time,
+  with a live 12-hour readout next to it so an evening schedule can't be
+  mistaken for a morning one), plus a "Run Watering Sequence Now" button to
+  trigger the full schedule on demand. This tab also has a **Temperature
+  scaling** on/off toggle and a **season profile** selector (see
+  [Seasonal schedule profiles](#seasonal-schedule-profiles) below).
 - **Setup** — WiFi credentials, time zone selection (US zones plus common
   world zones — UK/GMT, Central European, Moscow, Australia Eastern,
   Brazil, South Africa, Gulf/Dubai, India, China, Japan), a link to the
   firmware update page, and a reboot button.
 
 <p align="center">
-  <img src="../images/valves_page.png" alt="Valves tab of the Sprinky dashboard" width="60%">
+  <img src="images/valve_page.png" alt="Valves tab of the Sprinky dashboard" width="60%">
 </p>
 
 
@@ -176,7 +178,7 @@ All hardware-specific settings live in `config.h`:
 | `HOSTNAME` | The device's name — used for its WiFi access point SSID and its `.local` mDNS address. Give each controller a unique name if you run more than one. |
 | `RELAY8` | Define this if you have an 8-valve board; leave it commented out for a 4-valve board. |
 | `relay[]` | **The important one.** GPIO pin number for each relay/valve, in order. Must match your specific board's wiring. |
-| `ON` / `OFF` | Some relay boards are active-low (a `LOW` signal turns the relay on) and some are active-high. If your valves come on backwards from what you'd expect, swap these. |
+| `RELAY_ACTIVE` / `RELAY_INACTIVE` | Some relay boards are active-low (a `LOW` signal turns the relay on) and some are active-high. If your valves come on backwards from what you'd expect, swap these. |
 | `DS18B20` | Define this if you've wired up a DS18B20 digital temperature sensor. Leave undefined to read from a simple analog diode on the ADC pin instead (works with no sensor attached too, though readings won't be meaningful). If `DS18B20` is defined but the sensor isn't detected at boot, readings fall back to a fixed default value. |
 
 Everything else — the web dashboard, scheduling logic, OTA update

@@ -29,16 +29,18 @@ dashboard (custom `ESPAsyncWebServer` + JSON REST API, embedded HTML/CSS/JS —
 **no ESPUI, no Home Assistant/MQTT**) for control and configuration.
 `ElegantOTA` is mounted on the same web server for firmware updates.
 
-`README.md` (in this `src/` directory) is the user-facing setup guide —
-hardware requirements, flashing, first-boot Wi-Fi provisioning, dashboard
-walkthrough, screenshots under `../images/`. Read it for onboarding-flow
-context; this file focuses on architecture for making code changes.
+`README.md` (at the project root, so it renders on the GitHub project page)
+is the user-facing setup guide — hardware requirements, flashing, first-boot
+Wi-Fi provisioning, dashboard walkthrough, screenshots under `images/`. Read
+it for onboarding-flow context; this file focuses on architecture for making
+code changes.
 
 ## Project layout
 
 This is a **PlatformIO** project — there is **no `.ino` sketch**. The firmware
 is the `.cpp`/`.h` files, and (because PlatformIO's default `src_dir` is `src/`)
-they live in `src/` alongside `config.h`, `README.md`, `LICENSE`, and this file:
+they live in `src/` alongside `config.h`, `LICENSE`, and this file
+(`README.md` lives at the project root, not in `src/`):
 
 ```
 platformio.ini          project + env + dependency definitions
@@ -288,7 +290,5 @@ must re-populate them later (e.g. a season switch) has to call the shared
 
 - `src/build/` — stale pre-PlatformIO `arduino-cli` output, gitignored, ignore.
 - The jammed-valve "buzz" loop in `relayOn()` is commented out.
-- Screenshots in `../images/` predate the °F/°C toggle, the temperature-scaling
-  toggle, and the seasonal-profile selector.
 - `tempScaling` is a single global, deliberately not per-season (it's a
   sensor-behavior switch, not a schedule value).
