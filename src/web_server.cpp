@@ -146,9 +146,17 @@ static void handleSchedule(AsyncWebServerRequest *request, JsonVariant &json) {
     preferences.putUChar("curSeason", curSeason);
   }
 
+  uint8_t prevHour = state.runHour;
+  uint8_t prevMinute = state.runMinute;
   state.runHour = body["hour"] | state.runHour;
   state.runMinute = body["minute"] | state.runMinute;
   state.activeDays = body["activeDays"] | state.activeDays;
+  // Only clear the once-per-day auto-run latch if the run time itself
+  // changed -- saving for an unrelated reason (renaming a valve, toggling a
+  // day) shouldn't risk re-firing a cycle that already ran today.
+  if (state.runHour != prevHour || state.runMinute != prevMinute) {
+    resetAutoRunLatch();
+  }
 
   char key[14];
   seasonKey(key, curSeason, "hour");

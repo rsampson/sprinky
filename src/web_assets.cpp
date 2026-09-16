@@ -82,6 +82,22 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       </div>
       <div class="card-label">Days to Water</div>
       <div id="day-checkboxes" class="day-checkboxes"></div>
+
+      <div class="form-row">
+        <label for="season">Season profile</label>
+        <select id="season">
+          <option value="0">Summer</option>
+          <option value="1">Fall</option>
+          <option value="2">Winter</option>
+          <option value="3">Spring</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button id="save-schedule" class="btn primary">Save schedule</button>
+        <span id="save-schedule-status" class="save-status"></span>
+      </div>
+      <div class="card-sub" style="margin-bottom: 0.5rem">Saves run time, days, and valve names/run times below, all to the selected season profile.</div>
+
       <button id="run-now" class="btn">Run Watering Sequence Now</button>
     </div>
 
@@ -89,22 +105,6 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <div class="card-label">Valve Names &amp; Run Times</div>
       <div id="valve-config"></div>
       <div id="valve-total" class="valve-total"></div>
-
-      <div class="subgroup">
-        <div class="form-row">
-          <label for="season">Season profile</label>
-          <select id="season">
-            <option value="0">Summer</option>
-            <option value="1">Fall</option>
-            <option value="2">Winter</option>
-            <option value="3">Spring</option>
-          </select>
-        </div>
-        <div class="btn-row">
-          <button id="save-schedule" class="btn primary">Save this season</button>
-          <span id="save-schedule-status" class="save-status"></span>
-        </div>
-      </div>
 
       <div class="btn-row">
         <button id="temp-scaling" type="button" class="btn">Temperature scaling: --</button>
@@ -332,16 +332,6 @@ pre#log {
 }
 .form-row input[type="number"] { max-width: 5rem; flex: none; }
 .form-row input[type="range"] { flex: 1; }
-
-/* Groups a related control cluster (e.g. season selector + its Save button)
-   and keeps it clear of adjacent buttons/rows. */
-.subgroup {
-  border: 1px solid var(--border);
-  border-radius: 0.6rem;
-  padding: 0.75rem;
-  margin: 0.75rem 0;
-}
-.subgroup > :first-child { margin-top: 0; }
 
 /* A button on its own line with breathing room above it. */
 .btn-row { margin-top: 0.75rem; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }

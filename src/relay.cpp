@@ -71,6 +71,13 @@ void relayOn(int relay_index) {
 // one-second trigger window entirely.
 static long lastAutoRunDayKey = -1;
 
+// Called when the schedule is saved, so a deliberately-changed run time can
+// still fire today instead of waiting for the once-per-day latch to clear
+// tomorrow.
+void resetAutoRunLatch() {
+  lastAutoRunDayKey = -1;
+}
+
 // How long after the scheduled minute we'll still start a missed cycle. Covers
 // a sluggish loop / short stall, but not "device was off for hours" (we don't
 // want it watering at noon because it booted after a morning slot).

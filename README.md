@@ -20,7 +20,7 @@ requirement and no PCB to order.
 GPIO pins drive your relays.** That's a single array in `config.h`:
 
 ```cpp
-static const uint8_t relay[NUM_RELAYS] = { 32, 33, 25, 26, 27, 14, 12, 13 };
+static const uint8_t relay[] = { 32, 33, 25, 26, 27, 14, 12, 13 };
 ```
 
 Replace those pin numbers with whichever GPIO pins your board actually
@@ -31,7 +31,7 @@ WiFi setup, temperature scaling, OTA updates — works identically
 regardless of which board you used.
 
 <p align="center">
-  <img src="images/controller_board.jpg" alt="An example 8-relay ESP32 controller board wired up in an enclosure" width="60%">
+  <img src="images/controller_board.jpg" alt="An example 4-relay ESP8266 controller board wired up in an enclosure" width="60%">
   <br>
   <em>An example 8-relay board wired into a weatherproof enclosure — any similar board works.</em>
 </p>

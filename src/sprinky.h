@@ -54,6 +54,7 @@ void fetchDebugText();
 // Relay Action Prototypes
 void updateHourlyTempAverage();
 void controlRelays();
+void resetAutoRunLatch();
 void relayConfig();
 void relayOn(int relay_index);
 void allOff();
