@@ -6,6 +6,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sprinky</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -13,6 +14,9 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
   <h1>🌱 <span id="hostname">Sprinky</span></h1>
   <span id="conn" class="pill offline">offline</span>
 </header>
+<svg class="wave-divider" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0,20 C240,40 480,0 720,15 C960,30 1200,5 1440,20 L1440,40 L0,40 Z" fill="var(--surface-100)"></path>
+</svg>
 
 <nav class="tabs">
   <button class="tab-btn active" data-tab="status">Status</button>
@@ -24,23 +28,24 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
   <section id="tab-status" class="tab active">
     <div class="grid">
       <div class="card">
-        <div class="card-label">Time</div>
+        <div class="card-label">⏱️ Time</div>
         <div id="time" class="card-value">--:--:--</div>
+        <div id="date" class="card-sub"></div>
         <div id="tz" class="card-sub"></div>
       </div>
       <div class="card">
-        <div class="card-label">Outside Temp</div>
+        <div class="card-label">🌡️ Outside Temp</div>
         <div id="temp" class="card-value">-- °F</div>
         <div id="avgtemp" class="card-sub"></div>
         <button id="temp-unit" type="button" class="btn small">°F / °C</button>
       </div>
       <div class="card">
-        <div class="card-label">WiFi Signal</div>
+        <div class="card-label">📶 WiFi Signal</div>
         <div id="rssi" class="card-value">-- dBm</div>
         <div id="ip" class="card-sub"></div>
       </div>
       <div class="card">
-        <div class="card-label">Last Run</div>
+        <div class="card-label">💧 Last Run</div>
         <div id="runtime" class="card-value">--</div>
       </div>
     </div>
@@ -48,7 +53,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
     <div class="card wide">
       <div class="switch-row">
         <div>
-          <div class="card-label">Watering</div>
+          <div class="card-label">🚿 Watering</div>
           <div id="water-state" class="card-sub"></div>
         </div>
         <label class="switch">
@@ -59,19 +64,19 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
     </div>
 
     <div class="card wide">
-      <div class="card-label">Log</div>
+      <div class="card-label">📜 Log</div>
       <pre id="log"></pre>
     </div>
   </section>
 
   <section id="tab-valves" class="tab">
     <div class="card wide">
-      <div class="card-label">Diagnostics — open a valve for one minute</div>
+      <div class="card-label">🚰 Diagnostics — open a valve for one minute</div>
       <div id="valve-buttons" class="valve-buttons"></div>
     </div>
 
     <div class="card wide">
-      <div class="card-label">Schedule</div>
+      <div class="card-label">📅 Schedule</div>
       <div class="card-sub" style="margin-bottom: 0.5rem">24-hour time &mdash; e.g. 19 = 7 PM</div>
       <div class="form-row">
         <label for="run-hour">Run hour</label>
@@ -102,7 +107,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
     </div>
 
     <div class="card wide">
-      <div class="card-label">Valve Names &amp; Run Times</div>
+      <div class="card-label">🌿 Valve Names &amp; Run Times</div>
       <div id="valve-config"></div>
       <div id="valve-total" class="valve-total"></div>
 
@@ -114,7 +119,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 
   <section id="tab-setup" class="tab">
     <div class="card wide">
-      <div class="card-label">WiFi Credentials</div>
+      <div class="card-label">📡 WiFi Credentials</div>
       <div class="form-row">
         <label for="wifi-ssid">SSID</label>
         <input type="text" id="wifi-ssid" maxlength="32">
@@ -128,7 +133,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
     </div>
 
     <div class="card wide">
-      <div class="card-label">Time Zone</div>
+      <div class="card-label">🕒 Time Zone</div>
       <div class="form-row">
         <select id="timezone">
           <option value="AEST">Australia Eastern</option>
@@ -152,7 +157,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
     </div>
 
     <div class="card wide">
-      <div class="card-label">Maintenance</div>
+      <div class="card-label">🛠️ Maintenance</div>
       <div class="form-row">
         <a href="/update" class="btn">Firmware Update</a>
         <button id="reboot" class="btn danger">Reboot</button>
@@ -168,201 +173,257 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 
 const char STYLE_CSS[] PROGMEM = R"CSS(
 :root {
-  --bg: #f2f4f3;
-  --card-bg: #ffffff;
-  --text: #1a1f1c;
-  --text-sub: #6b7570;
-  --accent: #2e7d5b;
-  --accent-contrast: #ffffff;
-  --border: #e1e5e2;
-  --danger: #c0392b;
-  --online: #2e7d5b;
-  --offline: #b0392b;
+  --surface-100: #eef8f7;
+  --surface-000: #ffffff;
+  --surface-300: #dcece9;
+  --border: #d7e9e6;
+  --ink: #123b38;
+  --ink-secondary: #4f706b;
+  --header-from: #0f3d3a;
+  --header-to: #0d9488;
+  --header-text: #f4fbfa;
+  --aqua-300: #b9f3ea;
+  --aqua-500: #14b8a6;
+  --aqua-700: #0f766e;
+  --btn-primary-bg: #0d9488;
+  --btn-primary-text: var(--header-text);
+  --coral-500: #e2593a;
+  --success-500: #16a34a;
+  --shadow-sm: 0 1px 2px rgba(15,64,60,0.08), 0 1px 3px rgba(15,64,60,0.10);
+  --shadow-md: 0 10px 24px rgba(13,148,136,0.20), 0 3px 8px rgba(15,64,60,0.12);
+  --font-display: "Sora", system-ui, sans-serif;
+  --font-sans: "Manrope", system-ui, sans-serif;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px;
+  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 20px; --radius-full: 999px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14171a;
-    --card-bg: #1e2226;
-    --text: #eceff1;
-    --text-sub: #97a1a8;
-    --accent: #45b587;
-    --accent-contrast: #0b120d;
-    --border: #2b3136;
-    --danger: #e57373;
-    --online: #45b587;
-    --offline: #e57373;
+    --surface-100: #0b1f1d;
+    --surface-000: #123330;
+    --surface-300: #1c3d38;
+    --border: #24504a;
+    --ink: #eaf6f4;
+    --ink-secondary: #a7c9c4;
+    --header-from: #0a2a27;
+    --header-to: #0d9488;
+    --header-text: #f4fbfa;
+    --aqua-300: #164e48;
+    --aqua-500: #2dd4bf;
+    --aqua-700: #5eead4;
+    --btn-primary-bg: #2dd4bf;
+    --btn-primary-text: #06201d;
+    --coral-500: #ff8a65;
+    --success-500: #4ade80;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.45);
+    --shadow-md: 0 10px 26px rgba(0,0,0,0.5), 0 3px 10px rgba(0,0,0,0.35);
   }
 }
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  font-family: var(--font-sans);
+  background: var(--surface-100);
+  color: var(--ink);
 }
 header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.25rem;
+  padding: var(--space-4) var(--space-5);
+  background: linear-gradient(135deg, var(--header-from), var(--header-to));
+  color: var(--header-text);
 }
-header h1 { font-size: 1.25rem; margin: 0; }
+header h1 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--header-text);
+}
+.wave-divider { display: block; width: 100%; height: 22px; margin-top: -1px; }
 .pill {
-  font-size: 0.75rem;
-  padding: 0.25rem 0.6rem;
-  border-radius: 1rem;
-  font-weight: 600;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
 }
-.pill.online { background: var(--online); color: var(--accent-contrast); }
-.pill.offline { background: var(--offline); color: var(--accent-contrast); }
+.pill.online { background: var(--success-500); color: var(--header-text); }
+.pill.offline { background: var(--coral-500); color: var(--header-text); }
 
 .tabs {
   display: flex;
-  gap: 0.5rem;
-  padding: 0 1rem;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
 }
 .tab-btn {
   background: none;
   border: none;
-  color: var(--text-sub);
-  font-size: 0.95rem;
-  padding: 0.6rem 0.9rem;
+  font-family: var(--font-sans);
+  color: var(--ink-secondary);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: var(--radius-full);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
+  transition: background 0.15s, color 0.15s;
 }
 .tab-btn.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
+  color: var(--btn-primary-text);
+  background: var(--btn-primary-bg);
+  box-shadow: var(--shadow-sm);
 }
-main { padding: 1rem; max-width: 720px; margin: 0 auto; }
+main { padding: var(--space-4); max-width: 720px; margin: 0 auto; }
 .tab { display: none; }
 .tab.active { display: block; }
 
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
 }
 .card {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  padding: 0.9rem 1rem;
+  background: var(--surface-000);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+  transition: box-shadow 0.15s, transform 0.15s;
 }
-.card.wide { margin-bottom: 0.75rem; }
+.card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.card.wide { margin-bottom: var(--space-4); }
 .card-label {
-  font-size: 0.75rem;
-  color: var(--text-sub);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  margin-bottom: 0.35rem;
+  color: var(--ink-secondary);
+  margin-bottom: var(--space-2);
 }
-.card-value { font-size: 1.5rem; font-weight: 600; }
-.card-sub { font-size: 0.8rem; color: var(--text-sub); margin-top: 0.2rem; }
+.card-value {
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1.25;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.card-sub { font-family: var(--font-sans); font-size: 13px; line-height: 18px; font-weight: 500; color: var(--ink-secondary); margin-top: var(--space-1); }
 
 .switch-row { display: flex; align-items: center; justify-content: space-between; }
 .switch { position: relative; display: inline-block; width: 48px; height: 28px; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .switch .slider {
   position: absolute; cursor: pointer; inset: 0;
-  background: var(--border); border-radius: 28px; transition: 0.15s;
+  background: var(--surface-300); border-radius: var(--radius-full); transition: 0.15s;
 }
 .switch .slider::before {
   content: ""; position: absolute; height: 22px; width: 22px; left: 3px; bottom: 3px;
-  background: var(--card-bg); border-radius: 50%; transition: 0.15s;
+  background: var(--surface-000); border-radius: 50%; transition: 0.15s;
+  box-shadow: var(--shadow-sm);
 }
-.switch input:checked + .slider { background: var(--accent); }
+.switch input:checked + .slider { background: var(--btn-primary-bg); }
 .switch input:checked + .slider::before { transform: translateX(20px); }
 
 pre#log {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
+  font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 200px;
   overflow-y: auto;
   margin: 0;
-  color: var(--text-sub);
+  color: var(--ink-secondary);
 }
 
 .valve-buttons {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 0.6rem;
+  gap: var(--space-3);
 }
 .valve-btn {
   border: 1px solid var(--border);
-  background: var(--card-bg);
-  color: var(--text);
-  border-radius: 0.6rem;
-  padding: 0.9rem 0.5rem;
-  font-size: 0.9rem;
+  background: var(--surface-000);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-2);
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
-  transition: 0.15s;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s, transform 0.15s, background 0.15s, color 0.15s;
 }
+.valve-btn:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .valve-btn.active {
-  background: var(--accent);
-  color: var(--accent-contrast);
-  border-color: var(--accent);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: var(--btn-primary-bg);
 }
 
 .form-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  margin-bottom: 0.6rem;
+  margin-bottom: var(--space-3);
 }
-.form-row label { font-size: 0.85rem; color: var(--text-sub); min-width: 4.5rem; }
+.form-row label { font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--ink-secondary); min-width: 4.5rem; }
 .form-row input[type="text"],
 .form-row input[type="password"],
 .form-row input[type="number"],
 .form-row select {
   flex: 1;
   min-width: 6rem;
-  padding: 0.5rem 0.6rem;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-000);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
 }
 .form-row input[type="number"] { max-width: 5rem; flex: none; }
-.form-row input[type="range"] { flex: 1; }
+.form-row input[type="range"] { flex: 1; accent-color: var(--btn-primary-bg); }
 
 /* A button on its own line with breathing room above it. */
-.btn-row { margin-top: 0.75rem; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.btn-row { margin-top: var(--space-3); display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .btn-row .save-status { margin-left: 0; }
 
 .day-checkboxes {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-bottom: 0.8rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 .day-btn {
-  border: 1px solid var(--border);
-  background: var(--card-bg);
-  color: var(--text);
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.85rem;
+  border: none;
+  background: var(--surface-300);
+  color: var(--ink-secondary);
+  font-family: var(--font-sans);
+  border-radius: var(--radius-full);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+  transition: box-shadow 0.15s, background 0.15s, color 0.15s;
 }
 .day-btn.active {
-  background: var(--accent);
-  color: var(--accent-contrast);
-  border-color: var(--accent);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  box-shadow: var(--shadow-sm);
 }
 
 .valve-row {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
 }
 .valve-row:last-child { border-bottom: none; }
@@ -372,43 +433,49 @@ pre#log {
   position: absolute;
   left: 0.55rem;
   font-size: 0.8rem;
-  color: var(--text-sub);
+  color: var(--ink-secondary);
   pointer-events: none;
 }
 .valve-row input[type="text"] {
   width: 9rem;
-  padding: 0.45rem 0.55rem 0.45rem 1.6rem;
+  padding: 10px 10px 10px 1.6rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.85rem;
-  box-shadow: inset 0 -1px 0 var(--text-sub);
+  border-radius: var(--radius-sm);
+  background: var(--surface-000);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
 }
-.valve-row input[type="text"]::placeholder { color: var(--text-sub); opacity: 1; }
+.valve-row input[type="text"]::placeholder { color: var(--ink-secondary); opacity: 1; }
 .valve-row input[type="text"]:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
+  border-color: var(--aqua-500);
+  box-shadow: 0 0 0 2px var(--aqua-500);
 }
-.valve-row .runtime-val { min-width: 3.5rem; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.85rem; color: var(--text-sub); }
+.valve-row .runtime-val { min-width: 3.5rem; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink-secondary); }
 
 .btn {
   display: inline-block;
-  background: var(--card-bg);
-  color: var(--text);
+  font-family: var(--font-sans);
+  background: var(--surface-000);
+  color: var(--ink);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 0.55rem 1rem;
-  font-size: 0.9rem;
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   text-decoration: none;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s, transform 0.15s;
 }
-.btn.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
-.btn.danger { background: var(--danger); color: var(--accent-contrast); border-color: var(--danger); }
-.btn.small { padding: 0.3rem 0.6rem; font-size: 0.8rem; margin-top: 0.5rem; }
-.save-status { font-size: 0.8rem; color: var(--text-sub); margin-left: 0.6rem; }
-.valve-total { font-size: 0.85rem; color: var(--text-sub); margin: 0.5rem 0 0.75rem; }
+.btn:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.btn:active { box-shadow: var(--shadow-sm); transform: translateY(0); }
+.btn.primary { background: var(--btn-primary-bg); color: var(--btn-primary-text); border-color: var(--btn-primary-bg); }
+.btn.danger { background: var(--coral-500); color: var(--header-text); border-color: var(--coral-500); }
+.btn.small { padding: 6px 12px; font-size: 13px; margin-top: var(--space-2); }
+.save-status { font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--ink-secondary); margin-left: var(--space-2); }
+.valve-total { font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--ink-secondary); margin: var(--space-2) 0 var(--space-3); }
 )CSS";
 
 const char APP_JS[] PROGMEM = R"JS(
@@ -579,7 +646,11 @@ const char APP_JS[] PROGMEM = R"JS(
       $('hostname').textContent = s.hostname;
       document.title = s.hostname;
     }
-    $('time').textContent = s.time;
+    // s.time is "HH:MM:SS MM/DD" -- split so the date sits on its own line
+    // below the time instead of overflowing the card's large digits.
+    const timeParts = s.time.split(' ');
+    $('time').textContent = timeParts[0];
+    $('date').textContent = timeParts[1] || '';
     $('tz').textContent = s.timezone;
     lastTempF = s.tempF;
     lastAvgTempF = s.avgTempF;
