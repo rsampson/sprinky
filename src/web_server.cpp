@@ -41,11 +41,14 @@ static void sendJson(AsyncWebServerRequest *request, JsonDocument &doc) {
 static void handleStatus(AsyncWebServerRequest *request) {
   DynamicJsonDocument doc(3072);
 
-  char timeBuf[20];
+  char timeBuf[10];
+  char dateBuf[7];
   time_t t = now();
-  sprintf(timeBuf, "%02d:%02d:%02d %02d/%02d", hour(t), minute(t), second(t), month(t), day(t));
+  sprintf(timeBuf, "%02d:%02d:%02d", hour(t), minute(t), second(t));
+  sprintf(dateBuf, "%02d/%02d", month(t), day(t));
   doc["hostname"] = HOSTNAME;
   doc["time"] = timeBuf;
+  doc["date"] = dateBuf;
   doc["timezone"] = tzName();
   doc["timezoneCode"] = tzCode();
   doc["tempF"] = (int)state.cur_temp;

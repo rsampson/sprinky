@@ -6,7 +6,6 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sprinky</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -182,20 +181,23 @@ const char STYLE_CSS[] PROGMEM = R"CSS(
   --header-from: #0f3d3a;
   --header-to: #0d9488;
   --header-text: #f4fbfa;
-  --aqua-300: #b9f3ea;
   --aqua-500: #14b8a6;
-  --aqua-700: #0f766e;
-  --btn-primary-bg: #0d9488;
+  /* teal-600: the design system's calibrated primary-action color -- 8.6:1
+     contrast with --btn-primary-text, unlike a lighter fill. */
+  --btn-primary-bg: #1c5049;
   --btn-primary-text: var(--header-text);
-  --coral-500: #e2593a;
-  --success-500: #16a34a;
+  --coral-100: #f7e2da;
+  --coral-700: #6e3019;
+  --success-100: #dcf3e4;
+  --success-700: #153f29;
   --shadow-sm: 0 1px 2px rgba(15,64,60,0.08), 0 1px 3px rgba(15,64,60,0.10);
   --shadow-md: 0 10px 24px rgba(13,148,136,0.20), 0 3px 8px rgba(15,64,60,0.12);
-  --font-display: "Sora", system-ui, sans-serif;
-  --font-sans: "Manrope", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
   --space-5: 24px; --space-6: 32px;
   --radius-sm: 8px; --radius-md: 12px; --radius-lg: 20px; --radius-full: 999px;
+  --transition-fast: 0.15s;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -208,13 +210,13 @@ const char STYLE_CSS[] PROGMEM = R"CSS(
     --header-from: #0a2a27;
     --header-to: #0d9488;
     --header-text: #f4fbfa;
-    --aqua-300: #164e48;
     --aqua-500: #2dd4bf;
-    --aqua-700: #5eead4;
-    --btn-primary-bg: #2dd4bf;
-    --btn-primary-text: #06201d;
-    --coral-500: #ff8a65;
-    --success-500: #4ade80;
+    --btn-primary-bg: #3ea996;
+    --btn-primary-text: var(--header-text);
+    --coral-100: #3e2418;
+    --coral-700: #f0b79b;
+    --success-100: #163c26;
+    --success-700: #bdeed2;
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.45);
     --shadow-md: 0 10px 26px rgba(0,0,0,0.5), 0 3px 10px rgba(0,0,0,0.35);
   }
@@ -244,15 +246,14 @@ header h1 {
 }
 .wave-divider { display: block; width: 100%; height: 22px; margin-top: -1px; }
 .pill {
-  font-family: var(--font-sans);
   font-size: 13px;
   line-height: 18px;
   font-weight: 500;
   padding: 4px 12px;
   border-radius: var(--radius-full);
 }
-.pill.online { background: var(--success-500); color: var(--header-text); }
-.pill.offline { background: var(--coral-500); color: var(--header-text); }
+.pill.online { background: var(--success-100); color: var(--success-700); }
+.pill.offline { background: var(--coral-100); color: var(--coral-700); }
 
 .tabs {
   display: flex;
@@ -262,14 +263,13 @@ header h1 {
 .tab-btn {
   background: none;
   border: none;
-  font-family: var(--font-sans);
   color: var(--ink-secondary);
   font-size: 15px;
   font-weight: 600;
   padding: 10px 16px;
   border-radius: var(--radius-full);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 .tab-btn.active {
   color: var(--btn-primary-text);
@@ -291,12 +291,11 @@ main { padding: var(--space-4); max-width: 720px; margin: 0 auto; }
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: var(--space-5);
-  transition: box-shadow 0.15s, transform 0.15s;
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 .card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .card.wide { margin-bottom: var(--space-4); }
 .card-label {
-  font-family: var(--font-sans);
   font-size: 12px;
   line-height: 16px;
   font-weight: 600;
@@ -307,24 +306,23 @@ main { padding: var(--space-4); max-width: 720px; margin: 0 auto; }
 }
 .card-value {
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: clamp(20px, 6vw, 26px);
   line-height: 1.25;
   font-weight: 700;
   color: var(--ink);
-  white-space: nowrap;
 }
-.card-sub { font-family: var(--font-sans); font-size: 13px; line-height: 18px; font-weight: 500; color: var(--ink-secondary); margin-top: var(--space-1); }
+.card-sub { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--ink-secondary); margin-top: var(--space-1); }
 
 .switch-row { display: flex; align-items: center; justify-content: space-between; }
 .switch { position: relative; display: inline-block; width: 48px; height: 28px; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .switch .slider {
   position: absolute; cursor: pointer; inset: 0;
-  background: var(--surface-300); border-radius: var(--radius-full); transition: 0.15s;
+  background: var(--surface-300); border-radius: var(--radius-full); transition: var(--transition-fast);
 }
 .switch .slider::before {
   content: ""; position: absolute; height: 22px; width: 22px; left: 3px; bottom: 3px;
-  background: var(--surface-000); border-radius: 50%; transition: 0.15s;
+  background: var(--surface-000); border-radius: 50%; transition: var(--transition-fast);
   box-shadow: var(--shadow-sm);
 }
 .switch input:checked + .slider { background: var(--btn-primary-bg); }
@@ -350,14 +348,13 @@ pre#log {
   border: 1px solid var(--border);
   background: var(--surface-000);
   color: var(--ink);
-  font-family: var(--font-sans);
   border-radius: var(--radius-md);
   padding: var(--space-4) var(--space-2);
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.15s, transform 0.15s, background 0.15s, color 0.15s;
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 .valve-btn:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .valve-btn.active {
@@ -373,7 +370,7 @@ pre#log {
   flex-wrap: wrap;
   margin-bottom: var(--space-3);
 }
-.form-row label { font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--ink-secondary); min-width: 4.5rem; }
+.form-row label { font-size: 13px; font-weight: 500; color: var(--ink-secondary); min-width: 4.5rem; }
 .form-row input[type="text"],
 .form-row input[type="password"],
 .form-row input[type="number"],
@@ -385,7 +382,6 @@ pre#log {
   border-radius: var(--radius-sm);
   background: var(--surface-000);
   color: var(--ink);
-  font-family: var(--font-sans);
   font-size: 15px;
 }
 .form-row input[type="number"] { max-width: 5rem; flex: none; }
@@ -405,13 +401,12 @@ pre#log {
   border: none;
   background: var(--surface-300);
   color: var(--ink-secondary);
-  font-family: var(--font-sans);
   border-radius: var(--radius-full);
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: box-shadow 0.15s, background 0.15s, color 0.15s;
+  transition: box-shadow var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 .day-btn.active {
   background: var(--btn-primary-bg);
@@ -443,8 +438,8 @@ pre#log {
   border-radius: var(--radius-sm);
   background: var(--surface-000);
   color: var(--ink);
-  font-family: var(--font-sans);
   font-size: 13px;
+  box-shadow: inset 0 -1px 0 var(--ink-secondary);
 }
 .valve-row input[type="text"]::placeholder { color: var(--ink-secondary); opacity: 1; }
 .valve-row input[type="text"]:focus {
@@ -456,7 +451,6 @@ pre#log {
 
 .btn {
   display: inline-block;
-  font-family: var(--font-sans);
   background: var(--surface-000);
   color: var(--ink);
   border: 1px solid var(--border);
@@ -467,15 +461,15 @@ pre#log {
   cursor: pointer;
   text-decoration: none;
   box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.15s, transform 0.15s;
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 .btn:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .btn:active { box-shadow: var(--shadow-sm); transform: translateY(0); }
 .btn.primary { background: var(--btn-primary-bg); color: var(--btn-primary-text); border-color: var(--btn-primary-bg); }
-.btn.danger { background: var(--coral-500); color: var(--header-text); border-color: var(--coral-500); }
+.btn.danger { background: var(--coral-100); color: var(--coral-700); border-color: var(--coral-100); }
 .btn.small { padding: 6px 12px; font-size: 13px; margin-top: var(--space-2); }
-.save-status { font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--ink-secondary); margin-left: var(--space-2); }
-.valve-total { font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--ink-secondary); margin: var(--space-2) 0 var(--space-3); }
+.save-status { font-size: 13px; font-weight: 500; color: var(--ink-secondary); margin-left: var(--space-2); }
+.valve-total { font-size: 13px; font-weight: 500; color: var(--ink-secondary); margin: var(--space-2) 0 var(--space-3); }
 )CSS";
 
 const char APP_JS[] PROGMEM = R"JS(
@@ -646,11 +640,8 @@ const char APP_JS[] PROGMEM = R"JS(
       $('hostname').textContent = s.hostname;
       document.title = s.hostname;
     }
-    // s.time is "HH:MM:SS MM/DD" -- split so the date sits on its own line
-    // below the time instead of overflowing the card's large digits.
-    const timeParts = s.time.split(' ');
-    $('time').textContent = timeParts[0];
-    $('date').textContent = timeParts[1] || '';
+    $('time').textContent = s.time;
+    $('date').textContent = s.date;
     $('tz').textContent = s.timezone;
     lastTempF = s.tempF;
     lastAvgTempF = s.avgTempF;
