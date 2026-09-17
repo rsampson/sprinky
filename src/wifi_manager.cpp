@@ -165,6 +165,15 @@ void handleWiFi() {
                  humanDur(currentMillis - wifiDownSince).c_str());
       wifiConnectedSince = currentMillis;
 
+      // Re-arm mDNS against the fresh connection -- setupWiFi() only starts
+      // it once at boot, but the DISCONNECTED state above tears down and
+      // rebuilds the WiFi interface on every reconnect, so <hostname>.local
+      // stops resolving after any drop unless we start it again here.
+      if (!MDNS.begin(HOSTNAME)) {
+        Serial.println("Error setting up MDNS responder!");
+      }
+      MDNS.addService("http", "tcp", 80);
+
       wifiStateTimer = currentMillis; // reset timer for periodic checks
       currentWifiState = WIFI_STATE_CONNECTED;
     } else if (currentMillis - wifiStateTimer >= WIFI_CONNECT_TIMEOUT) {

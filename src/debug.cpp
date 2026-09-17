@@ -36,6 +36,7 @@ void webPrint(const char *format, ...) {
       if (!circBuff.isEmpty()) {
         circBuff.shift(); // Remove the trailing '\n'
       }
+      circBuff.push(buffer[i]); // retry now that space has been freed
     }
   }
 }

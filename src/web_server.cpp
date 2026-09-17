@@ -32,6 +32,11 @@ static const char *seasonName(uint8_t s) {
   return (s < NUM_SEASONS) ? names[s] : "?";
 }
 
+// Load one season's persisted schedule (hour/minute/days/per-valve runtime) into
+// state; mirrors handleSchedule()'s per-season writes. Declared here so both
+// handleSchedule() and handleSeason() can call it (defined further below).
+static void loadSeason(uint8_t s);
+
 static void sendJson(AsyncWebServerRequest *request, JsonDocument &doc) {
   AsyncResponseStream *response = request->beginResponseStream("application/json");
   serializeJson(doc, *response);
@@ -131,28 +136,38 @@ static void handleTempScaling(AsyncWebServerRequest *request, JsonVariant &json)
 }
 
 static void handleRun(AsyncWebServerRequest *request) {
-  allOff();
-  timer.cancel();
-  state.start_time_ms = millis();
-  timer.in(4800000, shutOff);  // safety: force all valves off 80 min after cycle start
-  state.runCycle = true;
+  startCycle();
   request->send(200, "text/plain", "ok");
 }
 
 static void handleSchedule(AsyncWebServerRequest *request, JsonVariant &json) {
   JsonObject body = json.as<JsonObject>();
 
-  // A Save may also switch which season these settings belong to.
+  int hour = body["hour"] | state.runHour;
+  int minute = body["minute"] | state.runMinute;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    request->send(400, "text/plain", "invalid hour/minute");
+    return;
+  }
+
+  // A Save may also switch which season these settings belong to. Load that
+  // season's own saved schedule first, so any field this request doesn't
+  // specify defaults to its saved value -- not whatever was left in `state`
+  // from the previously active season, which would otherwise silently
+  // overwrite the target season's profile with stale data.
   uint8_t season = body["season"] | curSeason;
   if (season < NUM_SEASONS && season != curSeason) {
     curSeason = season;
     preferences.putUChar("curSeason", curSeason);
+    loadSeason(curSeason);
+    hour = body["hour"] | state.runHour;
+    minute = body["minute"] | state.runMinute;
   }
 
   uint8_t prevHour = state.runHour;
   uint8_t prevMinute = state.runMinute;
-  state.runHour = body["hour"] | state.runHour;
-  state.runMinute = body["minute"] | state.runMinute;
+  state.runHour = (uint8_t)hour;
+  state.runMinute = (uint8_t)minute;
   state.activeDays = body["activeDays"] | state.activeDays;
   // Only clear the once-per-day auto-run latch if the run time itself
   // changed -- saving for an unrelated reason (renaming a valve, toggling a
@@ -173,9 +188,14 @@ static void handleSchedule(AsyncWebServerRequest *request, JsonVariant &json) {
   for (int i = 0; i < NUM_RELAYS && i < (int)valves.size(); i++) {
     JsonObject v = valves[i].as<JsonObject>();
     const char *name = v["name"] | "";
-    int runtime = v["runtime"] | state.runtime[i];
+    int runtime = v["runtime"] | (int)state.runtime[i];
+    // Clamp to a sane range: an unvalidated negative value would wrap to a
+    // huge one when stored into the unsigned runtime field, letting a valve
+    // stay open far longer than intended (see relay.cpp's temp_adjust math).
+    if (runtime < 0) runtime = 0;
+    if (runtime > 3600) runtime = 3600;  // 60 min/valve cap
 
-    state.runtime[i] = runtime;
+    state.runtime[i] = (unsigned long)runtime;
 
     char base[10];
     sprintf(base, "name%d", i + 1);
@@ -193,8 +213,6 @@ static void handleSchedule(AsyncWebServerRequest *request, JsonVariant &json) {
 
 // Switch the active season profile and load its stored schedule into `state`,
 // so controlRelays() starts running the newly selected season immediately.
-static void loadSeason(uint8_t s);
-
 static void handleSeason(AsyncWebServerRequest *request, JsonVariant &json) {
   JsonObject body = json.as<JsonObject>();
   int season = body["season"] | -1;
@@ -276,6 +294,11 @@ static void seedSeasonFromLegacy() {
   preferences.putString(key, preferences.getString("minute", "0"));
   seasonKey(key, 0, "activeDays");
   preferences.putUChar(key, preferences.getUChar("activeDays", 0x7F));
+  // Clear the legacy keys once migrated so they don't sit in NVS unread
+  // forever -- this is a one-time bridge, not a permanent fixture.
+  preferences.remove("hour");
+  preferences.remove("minute");
+  preferences.remove("activeDays");
 
   for (int i = 0; i < NUM_RELAYS; i++) {
     char base[10];
@@ -286,6 +309,7 @@ static void seedSeasonFromLegacy() {
     if (preferences.isKey(legacy)) {
       seasonKey(key, 0, base);
       preferences.putString(key, preferences.getString(legacy, ""));
+      preferences.remove(legacy);
     }
 
     sprintf(base, "slide%d", i + 1);
@@ -293,6 +317,7 @@ static void seedSeasonFromLegacy() {
     if (preferences.isKey(legacy)) {
       seasonKey(key, 0, base);
       preferences.putString(key, preferences.getString(legacy, "300"));
+      preferences.remove(legacy);
     }
   }
 }

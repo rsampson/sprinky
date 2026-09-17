@@ -53,15 +53,23 @@ void relayOn(int relay_index) {
 
 // runtimes are in seconds, start times are in ms
 // temp_adjust has the sec to ms conversion factored in (temp adjust is in ms)
-#define START1 state.start_time_ms
-#define START2 (START1 + state.runtime[0] * state.temp_adjust)
-#define START3 (START2 + state.runtime[1] * state.temp_adjust)
-#define START4 (START3 + state.runtime[2] * state.temp_adjust)
-#define START5 (START4 + state.runtime[3] * state.temp_adjust)
-#define START6 (START5 + state.runtime[4] * state.temp_adjust)
-#define START7 (START6 + state.runtime[5] * state.temp_adjust)
-#define START8 (START7 + state.runtime[6] * state.temp_adjust)
-#define START9 (START8 + state.runtime[7] * state.temp_adjust)
+// Offsets are relative to state.start_time_ms (OFFSET1 = 0), not absolute
+// millis() values -- controlRelays() compares them against (millis() -
+// state.start_time_ms), which wraps correctly across a millis() rollover.
+// Comparing absolute millis() against an absolute START value doesn't: if
+// start_time_ms is close enough to UINT32_MAX that a later threshold
+// overflows past it, the wrapped threshold becomes smaller than an earlier
+// one and every window comparison fails, silently ending the cycle with no
+// valve ever opened.
+#define OFFSET1 0UL
+#define OFFSET2 (OFFSET1 + state.runtime[0] * state.temp_adjust)
+#define OFFSET3 (OFFSET2 + state.runtime[1] * state.temp_adjust)
+#define OFFSET4 (OFFSET3 + state.runtime[2] * state.temp_adjust)
+#define OFFSET5 (OFFSET4 + state.runtime[3] * state.temp_adjust)
+#define OFFSET6 (OFFSET5 + state.runtime[4] * state.temp_adjust)
+#define OFFSET7 (OFFSET6 + state.runtime[5] * state.temp_adjust)
+#define OFFSET8 (OFFSET7 + state.runtime[6] * state.temp_adjust)
+#define OFFSET9 (OFFSET8 + state.runtime[7] * state.temp_adjust)
 
 // Calendar-day key (YYYYMMDD) of the last automatic cycle start, so a scheduled
 // run fires at most once per day; it self-clears when the date rolls over.
@@ -83,6 +91,36 @@ void resetAutoRunLatch() {
 // want it watering at noon because it booted after a morning slot).
 static const int CATCHUP_MINUTES = 5;
 
+// Starts a watering cycle right now: computes temp_adjust from the current
+// average temperature (or pins it to 1.0x if scaling is off), arms the
+// cycle's 80-minute safety timer, and marks the cycle as running. Shared by
+// the scheduled auto-trigger and the manual "Run Now" API so a manual run
+// always gets a fresh scaling factor instead of reusing whatever a prior
+// scheduled cycle last computed.
+void startCycle() {
+  allOff();
+  timer.cancel();  // cancel any manual operations
+  state.start_time_ms = millis();
+
+  // expand watering time .3 to 3x over a 40-90 average degree temp range, map it into milli seconds
+  if (state.tempScaling) {
+    long adjust = map((int32_t)state.avg_temp, 40, 90, 300, 3000);
+    // map() extrapolates past its output range for an avg_temp outside
+    // 40-90F (a failed sensor's sentinel reading, or genuinely extreme
+    // weather) -- clamp before use, since temp_adjust is unsigned and a
+    // negative value would wrap to a huge one, corrupting every valve's
+    // on-time for the whole cycle.
+    if (adjust < 300) adjust = 300;
+    if (adjust > 3000) adjust = 3000;
+    state.temp_adjust = (uint32_t)adjust;
+  } else {
+    state.temp_adjust = 1000;  // 1.0x: run times used as-is
+  }
+
+  timer.in(4800000, shutOff);  // safety: force all valves off 80 min after cycle start
+  state.runCycle = true;
+}
+
 void controlRelays() {
 
   if (state.wateringDisabled) {
@@ -100,31 +138,24 @@ void controlRelays() {
   bool inWindow = (nowMins >= schedMins) && (nowMins < schedMins + CATCHUP_MINUTES);
   if (todayActive && inWindow && dayKey != lastAutoRunDayKey && state.runCycle == false) {  // trigger start of cycle
     lastAutoRunDayKey = dayKey;
-    allOff();
-    timer.cancel();  // cancel any manual operations
-    state.start_time_ms = millis();
-
-    //expand watering time .3 to 3x over a 40-90 average degree temp range, map it into milli seconds
-    if (state.tempScaling)
-      state.temp_adjust = map((int32_t)state.avg_temp, 40, 90, 300, 3000);
-    else
-      state.temp_adjust = 1000;  // 1.0x: run times used as-is
-
-    timer.in(4800000, shutOff);  // safety: force all valves off 80 min after cycle start
-    state.runCycle = true;
+    startCycle();
   }
 
   if (state.runCycle == true) {  // run watering cycle if is time
+    // Rollover-safe: elapsed wraps correctly even if millis() itself has
+    // rolled over since start_time_ms, unlike comparing absolute millis()
+    // against an absolute threshold (see the OFFSET macros above).
+    unsigned long elapsed = millis() - state.start_time_ms;
 
-    if (millis() >= START1 && millis() < START2) relayOn(0);
-    else if (millis() >= START2 && millis() < START3) relayOn(1);
-    else if (millis() >= START3 && millis() < START4) relayOn(2);
-    else if (millis() >= START4 && millis() < START5) relayOn(3);
+    if (elapsed >= OFFSET1 && elapsed < OFFSET2) relayOn(0);
+    else if (elapsed >= OFFSET2 && elapsed < OFFSET3) relayOn(1);
+    else if (elapsed >= OFFSET3 && elapsed < OFFSET4) relayOn(2);
+    else if (elapsed >= OFFSET4 && elapsed < OFFSET5) relayOn(3);
 #ifdef RELAY8
-    else if (millis() >= START5 && millis() < START6) relayOn(4);
-    else if (millis() >= START6 && millis() < START7) relayOn(5);
-    else if (millis() >= START7 && millis() < START8) relayOn(6);
-    else if (millis() >= START8 && millis() < START9) relayOn(7);
+    else if (elapsed >= OFFSET5 && elapsed < OFFSET6) relayOn(4);
+    else if (elapsed >= OFFSET6 && elapsed < OFFSET7) relayOn(5);
+    else if (elapsed >= OFFSET7 && elapsed < OFFSET8) relayOn(6);
+    else if (elapsed >= OFFSET8 && elapsed < OFFSET9) relayOn(7);
 #endif
     else {  // terminate cycle
       void* garb;  // make call happy

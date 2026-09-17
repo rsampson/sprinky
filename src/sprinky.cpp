@@ -72,7 +72,12 @@ int getTempF() {
 #ifdef DS18B20
   if (sensors.getDeviceCount() != 0) {
     sensors.requestTemperatures();  // Send the command to get temperatures
-    tempF = float(sensors.getTempFByIndex(0));
+    float reading = float(sensors.getTempFByIndex(0));
+    // A sensor detected at boot can still fail later (loose wire, bus
+    // glitch); the library reports that as ~-196.6F (DEVICE_DISCONNECTED_F).
+    // Guard against it here so a bad reading doesn't flow into avg_temp and
+    // then into relay.cpp's temp_adjust math.
+    tempF = (reading > -50.0f) ? reading : 70;
   } else {
     tempF = 70;  // sensor failed, fake it
   }
@@ -90,6 +95,9 @@ int getTempF() {
           212));  // 1n914 diode @ .44 ma (10k / 5v), Wemos mini devides by .3125
                   // tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k /
                   // 5v)
+    // map() extrapolates past 32-212 for a marginal/out-of-calibration
+    // reading; clamp so a bogus value can't corrupt the temp-scaling math.
+    if (tempF < 32 || tempF > 212) tempF = 70;
   }
 #endif
   return (tempF);
@@ -205,6 +213,11 @@ void setup() {
 #ifdef DS18B20  // temp sensor
   sensors.begin();
   if (sensors.getDeviceCount() != 0) {
+    // Outdoor temperature doesn't need 12-bit (0.06F) precision, and the
+    // library blocks for the full conversion time on every read: 9-bit cuts
+    // that from ~750ms to ~94ms, since getTempF() runs once a second and
+    // nothing else in loop() executes while it's blocked.
+    sensors.setResolution(9);
     Serial.println("temp sensor configured");
   } else {
     Serial.println("!!temp sensor configuration failed!!");
