@@ -112,6 +112,11 @@ void setupWiFi() {
 #if defined(ESP32)
   WiFi.setSleep(false); // For the ESP32: turn off sleeping to increase UI
                         // responsivness (at the cost of power use)
+#else
+  // ESP8266 defaults to modem sleep, which drops multicast frames (mDNS
+  // queries and the router's IGMP queries) -- <hostname>.local then stops
+  // resolving after a while even though the IP still works.
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
 #endif
  
 }
@@ -136,6 +141,9 @@ void handleWiFi() {
     WiFi.mode(WIFI_OFF);
     delay(100);
     WiFi.mode(WIFI_STA);
+#if !defined(ESP32)
+    WiFi.setSleepMode(WIFI_NONE_SLEEP); // re-apply after the WIFI_OFF cycle
+#endif
     delay(100);
 
     Serial.printf("WiFi: Connecting to SSID '%s'...\n", stored_ssid.c_str());
@@ -168,7 +176,10 @@ void handleWiFi() {
       // Re-arm mDNS against the fresh connection -- setupWiFi() only starts
       // it once at boot, but the DISCONNECTED state above tears down and
       // rebuilds the WiFi interface on every reconnect, so <hostname>.local
-      // stops resolving after any drop unless we start it again here.
+      // stops resolving after any drop unless we start it again here. end()
+      // first: begin() on an already-running responder is a no-op that
+      // returns false, so without it the re-arm never actually happens.
+      MDNS.end();
       if (!MDNS.begin(HOSTNAME)) {
         Serial.println("Error setting up MDNS responder!");
       }
