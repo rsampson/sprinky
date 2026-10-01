@@ -18,7 +18,24 @@ static constexpr uint8_t NUM_RELAYS = sizeof(relay) / sizeof(relay[0]) ;
 
 #define LED_BUILTIN 2 // For ESP32 dev module, change if using different board
 
-#define DS18B20
+#define DS18B20  // compile in DS18B20 support; the A0 diode is always the fallback
+
+// --- Silicon-diode temperature sensor on A0 (fallback when no DS18B20) ---
+// Diode forward voltage at the A0 pin, calibrated in ice water and boiling
+// water (1N914 biased at ~0.44 mA through 10k). Working in millivolts keeps
+// one calibration valid on both ESP8266 and ESP32. Re-calibrate if the bias
+// resistor or supply changes (e.g. 10k from 3.3V instead of 5V drops Vf ~12mV).
+constexpr float DIODE_MV_AT_32F = 625.0f;
+constexpr float DIODE_MV_AT_212F = 393.0f;
+// A reading outside this window doesn't look like a forward-biased silicon
+// diode (missing, open, shorted), so the reading defaults to 70F. Spans about
+// -40F..160F on the calibration above.
+constexpr float DIODE_MV_MIN = 460.0f;
+constexpr float DIODE_MV_MAX = 718.0f;
+// ESP8266 only: A0 full-scale voltage in mV. 1000 for a bare ESP-12E/F module;
+// 3200 for NodeMCU/Wemos D1 boards with the on-board 220k/100k divider. (ESP32
+// reads calibrated millivolts directly.)
+constexpr float ESP8266_A0_FULL_SCALE_MV = 1000.0f;
 
 // --- Temperature scaling (FAO-56 Hargreaves reference evapotranspiration) ---
 // Run times are scaled by ET0(last 24h) / ET0(active season's reference day),

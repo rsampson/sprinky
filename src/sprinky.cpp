@@ -65,42 +65,69 @@ char charBuf[bufferSize];
 #include <OneWire.h>
 OneWire oneWire(TEMP_PIN);            // sensor hooked to TEMP_PIN
 DallasTemperature sensors(&oneWire);  // version 4.0.3
+static bool dsPresent = false;        // DS18B20 found at boot
+static DeviceAddress dsAddr;
+
+// Non-blocking: return the conversion started on the previous call (1s ago;
+// a 9-bit conversion takes ~94ms), then start the next one. False if the
+// reading is implausible -- -196.6F is the library's "disconnected" value and
+// 185F (85C) is the power-on-reset value a glitching sensor returns.
+static bool readDs18b20(float &tempF) {
+  if (!dsPresent) return false;
+  tempF = sensors.getTempF(dsAddr);
+  sensors.requestTemperatures();
+  return isfinite(tempF) && tempF > -40.0f && tempF < 150.0f && tempF != 185.0f;
+}
 #endif
 
+// Average of a few A0 samples in millivolts, or -1 if they disagree by more
+// than 15mV -- a floating (unconnected) ADC pin wanders, a biased diode doesn't.
+static float readDiodeMilliVolts() {
+  float lo = 1e9f, hi = -1e9f, sum = 0;
+  for (int i = 0; i < 4; i++) {
+#if defined(ESP32)
+    float mv = (float)analogReadMilliVolts(A0);
+#else
+    float mv = analogRead(A0) * ESP8266_A0_FULL_SCALE_MV / 1023.0f;
+#endif
+    if (mv < lo) lo = mv;
+    if (mv > hi) hi = mv;
+    sum += mv;
+  }
+  return (hi - lo > 15.0f) ? -1.0f : sum / 4;
+}
+
+// Silicon diode on A0, linear between the ice/boiling-water calibration
+// points. False if the voltage isn't that of a forward-biased diode.
+static bool readDiode(float &tempF) {
+  float mv = readDiodeMilliVolts();
+  if (mv < DIODE_MV_MIN || mv > DIODE_MV_MAX) return false;
+  tempF = 32.0f + (mv - DIODE_MV_AT_32F) * (212.0f - 32.0f) / (DIODE_MV_AT_212F - DIODE_MV_AT_32F);
+  return true;
+}
+
+// Outside temperature, trying each source in turn on every call: DS18B20,
+// then the A0 diode, then a fixed 70F. Always returns a sane value, so a
+// failed or missing sensor can't disturb the watering cycle. Logs to the
+// Status page whenever the source in use changes.
 int getTempF() {
+  static const char *lastSource = nullptr;
+  const char *source;
   float tempF;
 #ifdef DS18B20
-  if (sensors.getDeviceCount() != 0) {
-    sensors.requestTemperatures();  // Send the command to get temperatures
-    float reading = float(sensors.getTempFByIndex(0));
-    // A sensor detected at boot can still fail later (loose wire, bus
-    // glitch); the library reports that as ~-196.6F (DEVICE_DISCONNECTED_F).
-    // Guard against it here so a bad reading doesn't flow into avg_temp and
-    // then into relay.cpp's temp_adjust math.
-    tempF = (reading > -50.0f) ? reading : 70;
-  } else {
-    tempF = 70;  // sensor failed, fake it
-  }
-#else
-  int sensorValue = analogRead(A0);  // read diode voltage attached to A0 pin
-  if (sensorValue < 100) {
-    // no diode connected -- an unbiased floating pin reads near 0, well below
-    // the 402-640 range a real diode produces across its calibrated 32-212F span
-    tempF = 70;  // no sensor found, fake it
-  } else {
-    // map diode voltage to temperature F  ( diode mv values recorded from
-    // freezing and boiling water)
-    tempF = float(
-      map(sensorValue, 640, 402, 32,
-          212));  // 1n914 diode @ .44 ma (10k / 5v), Wemos mini devides by .3125
-                  // tempF = map(sensorValue, 200, 126, 32, 212); // 1n914 diode @ .44 ma (10k /
-                  // 5v)
-    // map() extrapolates past 32-212 for a marginal/out-of-calibration
-    // reading; clamp so a bogus value can't corrupt the temp-scaling math.
-    if (tempF < 32 || tempF > 212) tempF = 70;
-  }
+  if (readDs18b20(tempF)) source = "DS18B20";
+  else
 #endif
-  return (tempF);
+  if (readDiode(tempF)) source = "diode on A0";
+  else {
+    tempF = 70.0f;
+    source = "none (fixed 70F)";
+  }
+  if (source != lastSource) {
+    webPrint("Temp source: %s\n", source);
+    lastSource = source;
+  }
+  return (int)tempF;
 }
 
 // temp stuff ***************************************************************
@@ -212,16 +239,24 @@ void setup() {
 
 #ifdef DS18B20  // temp sensor
   sensors.begin();
-  if (sensors.getDeviceCount() != 0) {
-    // Outdoor temperature doesn't need 12-bit (0.06F) precision, and the
-    // library blocks for the full conversion time on every read: 9-bit cuts
-    // that from ~750ms to ~94ms, since getTempF() runs once a second and
-    // nothing else in loop() executes while it's blocked.
+  if (sensors.getDeviceCount() != 0 && sensors.getAddress(dsAddr, 0)) {
+    dsPresent = true;
+    // Outdoor temperature doesn't need 12-bit (0.06F) precision; 9-bit
+    // converts in ~94ms instead of ~750ms.
     sensors.setResolution(9);
+    // One blocking conversion now so the first getTempF() has a real reading,
+    // then switch to non-blocking: getTempF() collects each conversion a
+    // second after starting it, so loop() never waits on the sensor.
+    sensors.requestTemperatures();
+    sensors.setWaitForConversion(false);
     Serial.println("temp sensor configured");
   } else {
-    Serial.println("!!temp sensor configuration failed!!");
+    Serial.println("!!temp sensor configuration failed, using A0 diode fallback!!");
   }
+#endif
+#if defined(ESP32)
+  // 2.5dB attenuation spans ~0-1.25V: better resolution for a ~0.4-0.7V diode
+  analogSetPinAttenuation(A0, ADC_2_5db);
 #endif
   dayBuffer.clear();
 

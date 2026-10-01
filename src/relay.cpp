@@ -147,6 +147,10 @@ static float computeEtScale() {
   const float et0 = hargreavesET0(dayOfYear(now()), meanF, rangeF);
   const float etRef = hargreavesET0(ref.dayOfYear, ref.meanF, ref.rangeF);
   float scale = et0 / etRef;
+  if (!isfinite(scale)) {  // NaN slips past the clamps below and would corrupt valve timing
+    webPrint("ET scaling: invalid result, using 100%%\n");
+    return 1.0f;
+  }
   if (scale < ET_SCALE_MIN) scale = ET_SCALE_MIN;
   if (scale > ET_SCALE_MAX) scale = ET_SCALE_MAX;
 
