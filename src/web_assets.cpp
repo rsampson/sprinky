@@ -333,7 +333,7 @@ pre#log {
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
+  max-height: 320px;
   overflow-y: auto;
   margin: 0;
   color: var(--ink-secondary);

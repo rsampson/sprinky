@@ -13,7 +13,7 @@
 #include <arduino-timer.h>
 using TimerType = decltype(timer_create_default());
 
-inline constexpr size_t bufferSize = 400;
+inline constexpr size_t bufferSize = 1000;
 
 // --- Sprinkler Runtime State Struct ---
 struct SprinklerState {

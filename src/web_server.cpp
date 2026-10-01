@@ -44,7 +44,7 @@ static void sendJson(AsyncWebServerRequest *request, JsonDocument &doc) {
 }
 
 static void handleStatus(AsyncWebServerRequest *request) {
-  DynamicJsonDocument doc(3072);
+  DynamicJsonDocument doc(4096);
 
   char timeBuf[10];
   char dateBuf[7];
