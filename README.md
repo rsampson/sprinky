@@ -37,16 +37,16 @@ regardless of which board you used.
 </p>
 
 A temperature sensor is **optional**. Sprinky waters on schedule either
-way — a sensor just lets it shorten or extend run times based on outdoor
-temperature. See [Temperature-adjusted watering](#temperature-adjusted-watering)
+way — a sensor just lets it shorten or extend run times based on the
+weather. See [Temperature-adjusted watering](#temperature-adjusted-watering)
 below for what to expect if you skip it.
 
 ## What you need
 
 - An ESP32 or ESP8266 development board
 - A relay board (4 or 8 channel) to switch your sprinkler valves' solenoids
-- *(Optional)* A DS18B20 temperature sensor, or a simple analog diode
-  wired to an ADC pin, for temperature-adjusted watering
+- *(Optional)* A DS18B20 temperature sensor, or a silicon diode (e.g.
+  1N914) wired to the A0 analog input, for temperature-adjusted watering
 - A USB cable to flash the firmware the first time (updates after that can
   go over WiFi — see [Firmware updates](#firmware-updates))
 
@@ -89,7 +89,9 @@ This is a [PlatformIO](https://platformio.org/) project. There is no
 
 That's the whole setup. Everything past this point — naming valves,
 setting run times, scheduling — is done from the web dashboard, no
-re-flashing required.
+re-flashing required. For your first few weeks, we recommend running
+with temperature scaling off — see
+[Recommended: set up with scaling off first](#recommended-set-up-with-scaling-off-first).
 
 ## Using the dashboard
 
@@ -127,10 +129,23 @@ loss and reboots.
 Set a daily start time and which days of the week to water on. When that
 time arrives (and today is an active day), Sprinky runs through each
 valve in sequence for its configured duration, one at a time — never more
-than one valve open at once. A safety timer force-stops the whole cycle
-after a fixed maximum (80 minutes), and any manually-triggered valve test
-automatically shuts off after a minute, so a network hiccup or a
-forgotten browser tab can't leave a valve running indefinitely.
+than one valve open at once.
+
+Several independent safeguards keep a valve from being left running:
+
+- A **cycle safety timer** force-stops the whole cycle 5 minutes after it
+  should have finished.
+- A manually-triggered **valve test** shuts off automatically after a
+  minute, so a network hiccup or a forgotten browser tab can't leave it
+  running.
+- A **valve watchdog**, checked continuously and independent of the
+  timers, closes any valve that has stayed open more than a minute past
+  its run time and logs a `SAFETY:` line on the Status tab.
+- If the firmware ever hangs, the chip's watchdog resets it, and every
+  valve is closed at boot.
+
+Software can't detect a welded relay or a mechanically stuck valve,
+though — see [A note on reliability](#a-note-on-reliability).
 
 ## Seasonal schedule profiles
 
@@ -139,13 +154,18 @@ Spring). Each season stores its own complete schedule — start time, active
 days, and every valve's name and run time — so you can set watering up
 once per season and switch between them instead of re-entering everything.
 
-- **Selecting a season** immediately loads that profile's saved schedule
-  and makes it the active one. The controller keeps running the
-  last-selected season across reboots.
-- **"Save this season"** writes the fields currently on screen into the
+- **Automatic switching:** Sprinky switches to the matching profile on
+  Mar 1 (Spring), Jun 1 (Summer), Sep 1 (Fall) and Dec 1 (Winter), once
+  its clock has synced over the network. The seasons are flipped for the
+  southern hemisphere (a negative `LATITUDE_DEG` in `config.h`). It never
+  switches in the middle of a watering cycle.
+- **Manual override:** selecting a season in the dropdown immediately
+  loads that profile's saved schedule and makes it the active one. A
+  manual pick holds until the next of those dates, then automatic
+  switching takes over again. The active season is kept across reboots.
+- **"Save schedule"** writes the fields currently on screen into the
   selected season's slot.
-- Only one profile is active at a time — Sprinky does **not** switch
-  seasons automatically by date; you pick the season when it changes.
+- Only one profile is active at a time.
 
 On first boot after updating to this firmware, your existing schedule is
 copied into the **Summer** profile, so nothing is lost.
@@ -154,20 +174,57 @@ The Temperature scaling toggle is a single global setting, not per-season.
 
 ## Temperature-adjusted watering
 
-Sprinky keeps a rolling 24-hour average outdoor temperature and scales
-each valve's run time accordingly — longer waterings on hot days, shorter
-on cool ones. The reading comes from a DS18B20 digital sensor if you
-define `DS18B20` in `config.h` and wire one up, or otherwise from a
-simple analog diode on the ADC pin. The Status tab shows the temperature
-in either Fahrenheit or Celsius — use the °F / °C button on that card to
-switch.
+With **Temperature scaling** on, Sprinky adjusts every valve's run time to
+how much water the garden is actually losing — longer on hot, sunny days,
+shorter on cool or overcast ones.
 
-If you don't want to wire up either sensor, turn **Temperature scaling**
-off on the Valves tab — run times are then used exactly as you set them,
-regardless of the reported temperature. (Leaving scaling on with no sensor
-and `DS18B20` undefined means the analog fallback reads whatever voltage
-happens to be on the ADC pin, which can be a meaningless and unstable
-value feeding straight into the run-time scaling.)
+**How it works.** It uses the Hargreaves equation (FAO-56), the standard
+way irrigation controllers estimate evapotranspiration (ET₀, the water a
+lawn loses per day) when only temperature is measured. ET₀ is calculated
+from the last 24 hours of hourly readings (the average temperature and
+the gap between the day's high and low) plus the strength of the sun for
+your latitude and the date. The run-time factor is today's ET₀ divided by
+the ET₀ of a typical day for the active season (set in `config.h`). Your
+configured run times therefore mean "a typical day in this season", and
+the factor only corrects for today being hotter or cooler than that. The
+factor is limited to 0.25×–2.0×, and each run logs the values it used
+on the Status tab.
+
+**Temperature sensors.** Sprinky checks these on every reading, using the
+first one that works:
+
+1. a **DS18B20** digital sensor on `TEMP_PIN` (if `DS18B20` is defined in
+   `config.h`)
+2. a **silicon diode** on the A0 analog input, if its voltage is in the
+   range a forward-biased diode gives
+3. a fixed **70 °F** if neither is present or believable
+
+The Status tab logs a `Temp source:` line whenever the source changes, so
+you can see if a sensor drops out. With no working sensor, or in the first
+12 hours after a reboot, scaling simply stays at 100%. A sensor failure
+never stops or lengthens a watering cycle. The Status tab shows the
+temperature in either Fahrenheit or Celsius — use the °F / °C button on
+that card to switch.
+
+### Recommended: set up with scaling off first
+
+Temperature scaling is **off** by default, so a new installation waters
+for exactly the run times you set. When you first install Sprinky:
+
+1. Leave **Temperature scaling off** and set each valve's run time and the
+   schedule for the current season.
+2. Let it run like that for a while, adjusting the run times until every
+   zone is getting the right amount of water.
+3. Once the watering is satisfactory, turn **Temperature scaling on**.
+
+The scaling then adjusts from a baseline you know is right. With scaling
+on from the start, every run time you see working has already been
+multiplied by that day's factor, which makes it hard to tell whether a
+dry or soggy zone needs a different run time or is just reacting to the
+weather.
+
+If you don't fit a temperature sensor at all, leave scaling off — run
+times are then used exactly as you set them.
 
 ## Configuring your hardware
 
@@ -179,7 +236,11 @@ All hardware-specific settings live in `config.h`:
 | `RELAY8` | Define this if you have an 8-valve board; leave it commented out for a 4-valve board. |
 | `relay[]` | **The important one.** GPIO pin number for each relay/valve, in order. Must match your specific board's wiring. |
 | `RELAY_ACTIVE` / `RELAY_INACTIVE` | Some relay boards are active-low (a `LOW` signal turns the relay on) and some are active-high. If your valves come on backwards from what you'd expect, swap these. |
-| `DS18B20` | Define this if you've wired up a DS18B20 digital temperature sensor. Leave undefined to read from a simple analog diode on the ADC pin instead (works with no sensor attached too, though readings won't be meaningful). If `DS18B20` is defined but the sensor isn't detected at boot, readings fall back to a fixed default value. |
+| `DS18B20` | Define this to include DS18B20 sensor support (on `TEMP_PIN`). The A0 diode fallback is always included. If neither sensor is present, readings default to 70 °F. |
+| `LATITUDE_DEG` | Your latitude (north positive, south negative). Used for the sun-strength part of temperature scaling, and to flip the season dates in the southern hemisphere. |
+| `ET_REFERENCE[]` | A typical day for each season profile (day of year, average temperature, daily high–low gap), which the scaling compares against. The defaults are rough Southern California values; adjust them using the `ET0 …` lines logged on the Status tab. |
+| `DIODE_MV_AT_32F` / `DIODE_MV_AT_212F` | Diode calibration: its voltage in ice water and in boiling water. Recalibrate if you change the diode or its bias resistor/supply. |
+| `ESP8266_A0_FULL_SCALE_MV` | ESP8266 only: `1000` for a bare ESP-12E/F module, `3200` for NodeMCU/Wemos D1 boards with the on-board voltage divider. |
 
 Everything else — the web dashboard, scheduling logic, OTA update
 mechanism, WiFi reconnect handling — works the same regardless of these
