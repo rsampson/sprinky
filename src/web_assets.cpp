@@ -489,7 +489,7 @@ const char APP_JS[] PROGMEM = R"JS(
   let lastAvgTempF = null;
 
   // Latest temperature-scaling on/off state from /api/status, for the toggle button.
-  let tempScaling = true;
+  let tempScaling = false;
 
   const $ = (id) => document.getElementById(id);
 

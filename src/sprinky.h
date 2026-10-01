@@ -19,7 +19,7 @@ inline constexpr size_t bufferSize = 1000;
 struct SprinklerState {
   bool wateringDisabled;  // master off switch; when true, no valve ever opens
   bool runCycle;
-  bool tempScaling;  // when true, scale valve run times by 24h avg temp; when false, run times as-is
+  bool tempScaling;  // when true, scale valve run times by Hargreaves ET0 (default off); when false, run times as-is
   uint16_t runHour;
   uint16_t runMinute;
   unsigned long runtime[8];

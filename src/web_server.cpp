@@ -316,7 +316,7 @@ static void loadSeason(uint8_t s) {
   seasonKey(key, s, "activeDays");
   state.activeDays = preferences.getUChar(key, 0x7F);
 
-  state.tempScaling = preferences.getBool("tempScale", true);
+  state.tempScaling = preferences.getBool("tempScale", false);  // default off: set up baseline run times first
 
   for (int i = 0; i < NUM_RELAYS; i++) {
     char base[10];

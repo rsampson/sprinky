@@ -45,7 +45,7 @@ CircularBuffer<float, 24> dayBuffer;  // store 24 hour temp samples
 
 SprinklerState state = { .wateringDisabled = false,
                          .runCycle = false,
-                         .tempScaling = true,
+                         .tempScaling = false,  // off until the user enables it (see README)
                          .runHour = 2,
                          .runMinute = 10,
                          .runtime = { 300, 300, 300, 300, 300, 300, 300, 300 },

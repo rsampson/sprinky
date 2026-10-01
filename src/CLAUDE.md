@@ -246,7 +246,7 @@ just over HTTP:
 `preferences.begin("Settings")` is called in `setup()` (`sprinky.cpp`).
 
 **Global keys** (not per-season): `ssid`, `pass`, `timezone`, `disable`,
-`tempScale` (bool, default `true`), `curSeason` (`uint8`, 0-3, default `0` =
+`tempScale` (bool, default `false`), `curSeason` (`uint8`, 0-3, default `0` =
 Summer), `calSeason` (`uint8`, 0-3, the last calendar season seen by
 `updateAutoSeason()`; absent until the first NTP-synced boot).
 
