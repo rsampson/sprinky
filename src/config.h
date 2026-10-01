@@ -20,6 +20,32 @@ static constexpr uint8_t NUM_RELAYS = sizeof(relay) / sizeof(relay[0]) ;
 
 #define DS18B20
 
+// --- Temperature scaling (FAO-56 Hargreaves reference evapotranspiration) ---
+// Run times are scaled by ET0(last 24h) / ET0(active season's reference day),
+// so each season profile's configured minutes mean "a typical day in that
+// season". Latitude sets the solar-radiation term (north positive).
+constexpr float LATITUDE_DEG = 33.0f;
+
+// Typical day per season profile, in profile order Summer/Fall/Winter/Spring:
+// day of year (mid-season), 24h mean temp (F), daily max-min swing (F).
+// Rough Southern California values -- tune them from the "ET0 ... Tmean/swing"
+// lines logged on the Status page each run.
+struct EtReference {
+  int dayOfYear;
+  float meanF;
+  float rangeF;
+};
+constexpr EtReference ET_REFERENCE[] = {
+  { 196, 74.0f, 22.0f },  // Summer (mid-July)
+  { 288, 67.0f, 22.0f },  // Fall   (mid-October)
+  { 15, 56.0f, 20.0f },   // Winter (mid-January)
+  { 105, 62.0f, 20.0f },  // Spring (mid-April)
+};
+
+// Safety clamp on the computed run-time factor.
+constexpr float ET_SCALE_MIN = 0.25f;
+constexpr float ET_SCALE_MAX = 2.0f;
+
 // Relay active level. Some relay boards are active-low (a LOW signal closes the
 // relay contact / opens the valve). Swap these if your valves energize backwards.
 #define RELAY_ACTIVE HIGH

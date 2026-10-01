@@ -17,8 +17,9 @@ extern bool valveIsOpen[];
 
 // Active season profile (0=Summer, 1=Fall, 2=Winter, 3=Spring). Schedule
 // settings are stored per season under "s<n>_" key prefixes; only one season's
-// values are loaded into `state` at a time.
-static uint8_t curSeason = 0;
+// values are loaded into `state` at a time. Also read by relay.cpp to pick the
+// season's ET reference day for temperature scaling.
+uint8_t curSeason = 0;
 static const uint8_t NUM_SEASONS = 4;
 
 // Build a season-scoped Preferences key, e.g. seasonKey(buf, 2, "slide3") -> "s2_slide3".

@@ -157,8 +157,13 @@ struct and externs). No class hierarchy.
     bit 6 = Saturday, matching TimeLib `weekday()` which is 1-7 Sunday=1) to see
     if today is enabled, then fires at `state.runHour:state.runMinute:00` if
     `runCycle` is false. At cycle start it computes `state.temp_adjust`: if
-    `state.tempScaling` is on, `map((int32_t)state.avg_temp, 40, 90, 300, 3000)`
-    (0.3×–3.0× run-time multiplier, with a seconds→ms factor folded in);
+    `state.tempScaling` is on, `computeEtScale()` × 1000 (seconds→ms factor
+    folded in). That is the FAO-56 Hargreaves ET₀ of the last 24 hourly
+    `dayBuffer` samples (mean, max−min swing, today's day of year,
+    `LATITUDE_DEG`) divided by ET₀ of the active season's typical day
+    (`ET_REFERENCE[curSeason]` in `config.h`), clamped to
+    `ET_SCALE_MIN`–`ET_SCALE_MAX`; it falls back to 1.0× with <12 samples or a
+    <2 °F swing (dead sensor), and logs the ET0 line to the Status page;
     otherwise it's pinned to `1000` (1.0×, run times used exactly as entered).
     Per-valve start times chain as `START1..START9` macro offsets from
     `state.start_time_ms`, each `state.runtime[i] * state.temp_adjust`.

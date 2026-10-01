@@ -44,6 +44,7 @@ extern TimerType timer;
 extern CircularBuffer<float, 24> dayBuffer;
 extern CircularBuffer<char, (bufferSize - 4)> circBuff;
 extern char charBuf[bufferSize];
+extern uint8_t curSeason;  // active season profile (0=Summer..3=Spring), owned by web_server.cpp
 
 // Timezone variables and Days array are declared in time_manager.h
 

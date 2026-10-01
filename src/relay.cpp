@@ -91,6 +91,72 @@ void resetAutoRunLatch() {
 // want it watering at noon because it booted after a morning slot).
 static const int CATCHUP_MINUTES = 5;
 
+// --- Hargreaves ET0 (FAO-56 Irrigation & Drainage Paper 56, eqs. 21-25, 52) ---
+
+// Extraterrestrial radiation Ra (MJ/m^2/day) for a latitude and day of year.
+static float extraterrestrialRad(float latDeg, int doy) {
+  const float phi = latDeg * (float)M_PI / 180.0f;
+  const float dr = 1.0f + 0.033f * cosf(2.0f * (float)M_PI * doy / 365.0f);         // inverse Earth-Sun distance
+  const float decl = 0.409f * sinf(2.0f * (float)M_PI * doy / 365.0f - 1.39f);    // solar declination
+  float x = -tanf(phi) * tanf(decl);
+  if (x > 1.0f) x = 1.0f;  // polar night / midnight sun guard
+  if (x < -1.0f) x = -1.0f;
+  const float ws = acosf(x);  // sunset hour angle
+  return 37.586f * dr * (ws * sinf(phi) * sinf(decl) + cosf(phi) * cosf(decl) * sinf(ws));
+}
+
+// Reference evapotranspiration (mm/day) from mean temp and daily max-min swing, both F.
+static float hargreavesET0(int doy, float meanF, float rangeF) {
+  const float meanC = (meanF - 32.0f) / 1.8f;
+  const float rangeC = rangeF / 1.8f;
+  return 0.0023f * 0.408f * extraterrestrialRad(LATITUDE_DEG, doy) * (meanC + 17.8f) * sqrtf(rangeC);
+}
+
+static int dayOfYear(time_t t) {
+  static const int cum[12] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+  int y = year(t);
+  bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+  return cum[month(t) - 1] + day(t) + ((leap && month(t) > 2) ? 1 : 0);
+}
+
+// Run-time factor = ET0 over the last 24 hourly samples / ET0 of the active
+// season's typical day (ET_REFERENCE in config.h), clamped. Falls back to 1.0
+// when the history is too short (just booted) or flat (dead sensor reads a
+// constant 70F), since Hargreaves needs a real daily temperature swing.
+static float computeEtScale() {
+  const auto n = dayBuffer.size();
+  if (n < 12) {
+    webPrint("ET scaling: only %d h of temps, using 100%%\n", (int)n);
+    return 1.0f;
+  }
+  float tMax = dayBuffer[0], tMin = dayBuffer[0], sum = 0;
+  for (decltype(dayBuffer)::index_t i = 0; i < n; i++) {
+    float v = dayBuffer[i];
+    if (v > tMax) tMax = v;
+    if (v < tMin) tMin = v;
+    sum += v;
+  }
+  const float meanF = sum / n;
+  const float rangeF = tMax - tMin;
+  if (rangeF < 2.0f) {
+    webPrint("ET scaling: temp swing %dF too flat (sensor?), using 100%%\n", (int)rangeF);
+    return 1.0f;
+  }
+
+  const EtReference &ref = ET_REFERENCE[curSeason < 4 ? curSeason : 0];
+  const float et0 = hargreavesET0(dayOfYear(now()), meanF, rangeF);
+  const float etRef = hargreavesET0(ref.dayOfYear, ref.meanF, ref.rangeF);
+  float scale = et0 / etRef;
+  if (scale < ET_SCALE_MIN) scale = ET_SCALE_MIN;
+  if (scale > ET_SCALE_MAX) scale = ET_SCALE_MAX;
+
+  // integer tenths: avoids relying on %f support in webPrint's vsnprintf
+  webPrint("ET0 %d.%dmm (ref %d.%d), Tmean %dF swing %dF -> %d%%\n",
+           (int)(et0 * 10) / 10, (int)(et0 * 10) % 10, (int)(etRef * 10) / 10, (int)(etRef * 10) % 10,
+           (int)meanF, (int)rangeF, (int)(scale * 100));
+  return scale;
+}
+
 // Starts a watering cycle right now: computes temp_adjust from the current
 // average temperature (or pins it to 1.0x if scaling is off), arms the
 // cycle's 80-minute safety timer, and marks the cycle as running. Shared by
@@ -102,17 +168,9 @@ void startCycle() {
   timer.cancel();  // cancel any manual operations
   state.start_time_ms = millis();
 
-  // expand watering time .3 to 3x over a 40-90 average degree temp range, map it into milli seconds
+  // temp_adjust is the run-time factor x1000 (it doubles as the s->ms conversion)
   if (state.tempScaling) {
-    long adjust = map((int32_t)state.avg_temp, 40, 90, 300, 3000);
-    // map() extrapolates past its output range for an avg_temp outside
-    // 40-90F (a failed sensor's sentinel reading, or genuinely extreme
-    // weather) -- clamp before use, since temp_adjust is unsigned and a
-    // negative value would wrap to a huge one, corrupting every valve's
-    // on-time for the whole cycle.
-    if (adjust < 300) adjust = 300;
-    if (adjust > 3000) adjust = 3000;
-    state.temp_adjust = (uint32_t)adjust;
+    state.temp_adjust = (uint32_t)(computeEtScale() * 1000.0f);
   } else {
     state.temp_adjust = 1000;  // 1.0x: run times used as-is
   }
