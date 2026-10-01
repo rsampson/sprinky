@@ -235,7 +235,8 @@ just over HTTP:
 
 **Global keys** (not per-season): `ssid`, `pass`, `timezone`, `disable`,
 `tempScale` (bool, default `true`), `curSeason` (`uint8`, 0-3, default `0` =
-Summer).
+Summer), `calSeason` (`uint8`, 0-3, the last calendar season seen by
+`updateAutoSeason()`; absent until the first NTP-synced boot).
 
 **Per-season schedule keys**, prefixed `s<0-3>_`: `s<n>_hour`, `s<n>_minute`,
 `s<n>_activeDays` (`uint8`, longest key at 13 chars — stay ≤15 for the ESP32
@@ -243,8 +244,17 @@ NVS limit), `s<n>_name1..8`, `s<n>_slide1..8` (run time in **seconds**).
 
 Season index → name: `0`=Summer, `1`=Fall, `2`=Winter, `3`=Spring. Only one
 profile is loaded into `state` at a time; `controlRelays()` is season-agnostic
-and just reads `state.*`. There is **no** date-based auto-switching — the user
-picks the season.
+and just reads `state.*`.
+
+**Auto-switching**: `updateAutoSeason()` (`web_server.cpp`, called from the
+once-per-second housekeeping in `loop()`) maps the date to a meteorological
+season (Jun–Aug Summer, Sep–Nov Fall, Dec–Feb Winter, Mar–May Spring; flipped
+when `LATITUDE_DEG < 0`). It switches `curSeason` only when that calendar
+season differs from the persisted `calSeason`, i.e. on a boundary crossing
+(Mar/Jun/Sep/Dec 1), so a manual pick via `/api/season` or `/api/schedule`
+holds until the next boundary. It does nothing before NTP sync (year < 2024)
+or while a cycle is running (it retries afterwards). A device with no
+`calSeason` key treats its first synced boot as a crossing.
 
 **Legacy migration**: `seedSeasonFromLegacy()` (called once from
 `setUpWebServer()`) copies the pre-seasonal flat keys (`hour`, `minute`,

@@ -267,6 +267,7 @@ void loop() {
     timer.tick();                        // tick the timer (to shut down valve tests after two minutes)
     state.cur_temp = getTempF();         // sample sensor here (loop ctx); web handlers read the cache
     updateHourlyTempAverage();
+    updateAutoSeason();                  // follow calendar seasons unless manually overridden
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // toggle the LED
     lastHousekeepingMs = millis();
   }

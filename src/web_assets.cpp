@@ -96,6 +96,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
           <option value="3">Spring</option>
         </select>
       </div>
+      <div class="card-sub" style="margin-bottom: 0.5rem">Switches automatically on Mar 1, Jun 1, Sep 1 and Dec 1; a manual pick holds until the next of those dates.</div>
       <div class="btn-row">
         <button id="save-schedule" class="btn primary">Save schedule</button>
         <span id="save-schedule-status" class="save-status"></span>

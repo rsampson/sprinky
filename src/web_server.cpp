@@ -323,6 +323,37 @@ static void seedSeasonFromLegacy() {
   }
 }
 
+// Calendar (meteorological) season for a date, as a profile index:
+// Jun-Aug Summer, Sep-Nov Fall, Dec-Feb Winter, Mar-May Spring. Flipped for
+// the southern hemisphere (negative LATITUDE_DEG).
+static uint8_t calendarSeason(time_t t) {
+  static const uint8_t byMonth[12] = { 2, 2, 3, 3, 3, 0, 0, 0, 1, 1, 1, 2 };  // Jan..Dec
+  uint8_t s = byMonth[month(t) - 1];
+  return (LATITUDE_DEG < 0) ? (s + 2) % NUM_SEASONS : s;
+}
+
+// Switch the active season profile when the calendar crosses a season
+// boundary (Mar/Jun/Sep/Dec 1). Only boundary crossings switch -- the last
+// calendar season seen is persisted as "calSeason" -- so a manual pick from
+// the dropdown holds until the next boundary. A device with no "calSeason"
+// yet treats its first synced boot as a crossing. Called from loop().
+void updateAutoSeason() {
+  time_t t = now();
+  if (year(t) < 2024) return;      // clock not NTP-synced yet
+  if (state.runCycle) return;      // never swap run times mid-cycle; retry after
+
+  uint8_t cal = calendarSeason(t);
+  if (preferences.isKey("calSeason") && preferences.getUChar("calSeason", 0) == cal) return;
+
+  preferences.putUChar("calSeason", cal);
+  if (cal == curSeason) return;  // already on it (e.g. picked manually ahead of time)
+  curSeason = cal;
+  preferences.putUChar("curSeason", curSeason);
+  loadSeason(curSeason);
+  webPrint("Season auto-switched to %s: start %02d:%02d, days 0x%02X\n",
+           seasonName(curSeason), state.runHour, state.runMinute, state.activeDays);
+}
+
 void setUpWebServer() {
   curSeason = preferences.getUChar("curSeason", 0);
   if (curSeason >= NUM_SEASONS) curSeason = 0;
