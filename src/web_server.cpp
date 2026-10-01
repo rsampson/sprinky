@@ -4,6 +4,9 @@
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
 #include <TimeLib.h>
+#if defined(ESP32)
+#include <atomic>
+#endif
 
 #if defined(ESP32)
 #include <WiFi.h>
@@ -91,6 +94,62 @@ static void handleStatus(AsyncWebServerRequest *request) {
   sendJson(request, doc);
 }
 
+// --- Valve/timer commands from the web UI, carried out by loop() ---
+// On ESP32 the request handlers run in the AsyncTCP task, concurrently with
+// loop(). arduino-timer and the valve state aren't thread-safe, so a handler
+// touching them could, e.g., have a just-armed valve shutoff wiped by
+// loop()'s timer.tick(). Handlers therefore only post a command here and
+// processWebCommands(), called from loop(), does the work: only loop() ever
+// touches the timer or the valves. One slot, latest request wins -- an
+// earlier, unprocessed request is superseded by the newer one, which is what
+// the user asked for last. Reboot has its own flag so nothing overwrites it.
+enum : int {
+  CMD_NONE = 0,
+  CMD_STOP,           // close all valves, end any cycle
+  CMD_RUN,            // start a watering cycle now
+  CMD_VALVE_ON = 16,  // + index: manual valve test
+};
+#if defined(ESP32)
+template <typename T> using CmdSlot = std::atomic<T>;
+#else
+// ESP8266: ESPAsyncTCP callbacks run only while loop() yields, never in the
+// middle of it, so a plain read-then-clear can't be interrupted. (Its
+// toolchain also lacks the __atomic_exchange helpers std::atomic needs.)
+template <typename T> struct CmdSlot {
+  volatile T v;
+  CmdSlot(T init) : v(init) {}
+  void operator=(T x) { v = x; }
+  T exchange(T x) { T old = v; v = x; return old; }
+};
+#endif
+static CmdSlot<int> pendingCmd{ CMD_NONE };
+static CmdSlot<bool> pendingReboot{ false };
+
+void processWebCommands() {
+  static unsigned long rebootAtMs = 0;
+  if (pendingReboot.exchange(false)) {
+    rebootAtMs = millis() + 500;  // let the HTTP response go out first
+    if (rebootAtMs == 0) rebootAtMs = 1;
+  }
+  if (rebootAtMs != 0 && (long)(millis() - rebootAtMs) >= 0) {
+    allOff();
+    ESP.restart();
+  }
+
+  int cmd = pendingCmd.exchange(CMD_NONE);
+  if (cmd == CMD_STOP) {
+    shutOff(nullptr);  // also clears runCycle
+  } else if (cmd == CMD_RUN) {
+    startCycle();
+  } else if (cmd >= CMD_VALVE_ON && cmd < CMD_VALVE_ON + NUM_RELAYS) {
+    // Ends any schedule-driven cycle first (shutOff clears runCycle), so
+    // controlRelays() stops sequencing and relayOn() arms the manual limit.
+    shutOff(nullptr);
+    relayOn(cmd - CMD_VALVE_ON);
+    timer.in(60000, shutOff);
+  }
+}
+
 static void handleValve(AsyncWebServerRequest *request, JsonVariant &json, int index) {
   if (index < 0 || index >= NUM_RELAYS) {
     request->send(400, "text/plain", "invalid valve index");
@@ -98,18 +157,7 @@ static void handleValve(AsyncWebServerRequest *request, JsonVariant &json, int i
   }
   JsonObject body = json.as<JsonObject>();
   bool on = body["on"] | false;
-
-  // Either branch ends any schedule-driven cycle: clear runCycle so
-  // controlRelays() stops sequencing (and doesn't re-open a valve with no
-  // safety timer armed, since shutOff() cancelled it).
-  state.runCycle = false;
-  if (on) {
-    shutOff((void *)0);
-    relayOn(index);
-    timer.in(60000, shutOff);
-  } else {
-    shutOff((void *)0);
-  }
+  pendingCmd = on ? CMD_VALVE_ON + index : CMD_STOP;
   request->send(200, "text/plain", "ok");
 }
 
@@ -119,10 +167,9 @@ static void handleWatering(AsyncWebServerRequest *request, JsonVariant &json) {
   state.wateringDisabled = disable;
   // Disabling must stop any watering already in progress, not just block future
   // cycles: controlRelays() returns early when state.wateringDisabled is set, so
-  // without this an open valve would stay open until the 80-min safety timer.
+  // without this an open valve would stay open until the cycle's safety timer.
   if (disable) {
-    shutOff((void *)0);
-    state.runCycle = false;
+    pendingCmd = CMD_STOP;
   }
   preferences.putBool("disable", disable);
   request->send(200, "text/plain", "ok");
@@ -137,7 +184,7 @@ static void handleTempScaling(AsyncWebServerRequest *request, JsonVariant &json)
 }
 
 static void handleRun(AsyncWebServerRequest *request) {
-  startCycle();
+  pendingCmd = CMD_RUN;
   request->send(200, "text/plain", "ok");
 }
 
@@ -250,10 +297,7 @@ static void handleTimezone(AsyncWebServerRequest *request, JsonVariant &json) {
 
 static void handleReboot(AsyncWebServerRequest *request) {
   request->send(200, "text/plain", "rebooting");
-  timer.in(500, [](void *) -> bool {
-    ESP.restart();
-    return false;
-  });
+  pendingReboot = true;  // processWebCommands() restarts after ~500ms
 }
 
 static AsyncCallbackJsonWebHandler *jsonHandler(const char *uri, ArJsonRequestHandlerFunction fn) {
@@ -278,7 +322,13 @@ static void loadSeason(uint8_t s) {
     char base[10];
     sprintf(base, "slide%d", i + 1);
     seasonKey(key, s, base);
-    state.runtime[i] = preferences.getString(key, "300").toInt();
+    // Clamp like handleSchedule() does on save: a corrupted or legacy NVS
+    // value (e.g. "-1" -> ~4.3e9 as unsigned) would otherwise open a valve
+    // for days.
+    long runtime = preferences.getString(key, "300").toInt();
+    if (runtime < 0) runtime = 0;
+    if (runtime > 3600) runtime = 3600;  // 60 min/valve cap
+    state.runtime[i] = (unsigned long)runtime;
   }
 }
 

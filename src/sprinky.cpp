@@ -280,6 +280,13 @@ void setup() {
   getBootReasonMessage(bootReasonMessage, BOOT_REASON_MESSAGE_SIZE);
   webPrint("Reset reason: %s\n", bootReasonMessage);
 
+#if defined(ESP32)
+  // Reset the board if loop() ever hangs (task WDT, ~5s), so setup()'s
+  // allOff() closes the valves. arduino-esp32 leaves this off by default; the
+  // ESP8266's hardware watchdog already does the equivalent.
+  enableLoopWDT();
+#endif
+
   Serial.println("We Are Go!");
 }
 
@@ -295,7 +302,9 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     timeClient.update();  // run ntp time client
   }
+  processWebCommands(); // web UI valve/run/reboot requests (only loop() touches valves/timer)
   controlRelays();      // activate relay if correct time
+  valveWatchdog();      // last-resort: close any valve open past its limit
   ElegantOTA.loop();
 
   if (millis() - lastHousekeepingMs >= 1000) {  // once per second housekeeping (rollover-safe)

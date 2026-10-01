@@ -167,9 +167,21 @@ struct and externs). No class hierarchy.
     otherwise it's pinned to `1000` (1.0×, run times used exactly as entered).
     Per-valve start times chain as `START1..START9` macro offsets from
     `state.start_time_ms`, each `state.runtime[i] * state.temp_adjust`.
-  - **Safety timer** (`timer`, arduino-timer): force-shuts all valves after
-    4 800 000 ms (80 min) for a scheduled cycle, and after 60 s for a manual
-    valve test.
+  - **Safety timer** (`timer`, arduino-timer): force-shuts all valves (and
+    clears `runCycle`, via `shutOff()`) 5 min after a cycle's computed length,
+    and after 60 s for a manual valve test.
+  - **Valve watchdog** (`valveWatchdog()`, every `loop()`): independent of
+    `timer` and the sequencing. `relayOn()` records the open time and a limit
+    (cycle: that valve's scaled run time; manual: 60 s; each + 1 min); past
+    it, all valves close and a `SAFETY:` line is logged. On ESP32,
+    `enableLoopWDT()` resets the board if `loop()` hangs (`setup()` then
+    closes all valves); the ESP8266 hardware watchdog does the same.
+  - **Only `loop()` touches the valves or `timer`.** The `/api/valve`, `/api/run`,
+    `/api/watering` (disable) and `/api/reboot` handlers just post a command
+    (`pendingCmd`, latest wins; `pendingReboot`) that `processWebCommands()`
+    carries out at the top of `loop()`. On ESP32 the handlers run in the
+    AsyncTCP task, and arduino-timer isn't thread-safe. Keep new handlers to
+    this pattern.
   - `ComputeAveTemp()` — once/hour, pushes `state.cur_temp` into the 24-slot
     `dayBuffer` and recomputes `state.avg_temp`.
   - The "buzz relay to clear a jammed valve" loop in `relayOn()` is **commented

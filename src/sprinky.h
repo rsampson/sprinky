@@ -62,4 +62,5 @@ void relayOn(int relay_index);
 void allOff();
 void webPrint(const char *format, ...);
 bool shutOff(void *);
+void valveWatchdog();
 // Time utility functions are declared in time_manager.h

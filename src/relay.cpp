@@ -10,6 +10,13 @@ void relayConfig() {
 
 bool valveIsOpen[NUM_RELAYS];
 
+// Valve watchdog bookkeeping: when the open valve was opened and how long it
+// may stay open. Set by relayOn(), enforced by valveWatchdog(). volatile: on
+// ESP32, relayOn() can run from the AsyncTCP task (manual valve test).
+static volatile unsigned long valveOpenedMs = 0;
+static volatile unsigned long valveMaxOpenMs = 0;
+static const unsigned long MANUAL_VALVE_MS = 60000;  // manual valve-test duration
+
 void allOff() {
   for (int i = 0; i < NUM_RELAYS; i++) {
     digitalWrite(relay[i], RELAY_INACTIVE);
@@ -17,11 +24,31 @@ void allOff() {
   }
 }
 
+// Closes every valve and ends any watering cycle. Clearing runCycle matters:
+// otherwise controlRelays() reopens the current valve on the next loop().
 bool shutOff(void*) {  // bool return and void* makes timer api happy
   allOff();
   timer.cancel();
+  state.runCycle = false;
   Serial.println("timer shut off ");
   return (false);
+}
+
+// Last-resort guard, called every loop() and independent of arduino-timer and
+// the cycle sequencing: if a valve has been open longer than relayOn() allowed,
+// close everything. Bounds any valve to its window plus a minute even if the
+// timer, the cycle logic or the stored run times go wrong.
+void valveWatchdog() {
+  bool anyOpen = false;
+  for (int i = 0; i < NUM_RELAYS; i++) anyOpen |= valveIsOpen[i];
+  if (!anyOpen) return;
+  unsigned long openFor = millis() - valveOpenedMs;
+  if (openFor > valveMaxOpenMs) {
+    void* garb = nullptr;
+    shutOff(garb);
+    webPrint("SAFETY: valve open %lus, over its %lus limit -- all valves closed\n",
+             openFor / 1000, valveMaxOpenMs / 1000);
+  }
 }
 
 // turn a specific relay on, all others off
@@ -30,6 +57,11 @@ void relayOn(int relay_index) {
 
   if (valveIsOpen[relay_index] == true) return;  // only turn on if off
   allOff();
+
+  // Arm the valve watchdog before opening: a cycle valve may stay open for its
+  // scaled run time, a manual test for MANUAL_VALVE_MS; plus a minute's slack.
+  valveMaxOpenMs = (state.runCycle ? state.runtime[relay_index] * state.temp_adjust : MANUAL_VALVE_MS) + 60000UL;
+  valveOpenedMs = millis();
 
   // "buzz" relay to clear jammed valve
   // for (int j = 0; j < 3; j++) {
@@ -161,9 +193,16 @@ static float computeEtScale() {
   return scale;
 }
 
+// Safety timer callback: the cycle outran its computed length plus margin.
+static bool cycleTimeout(void*) {
+  shutOff(nullptr);
+  webPrint("SAFETY: watering cycle overran, all valves closed\n");
+  return false;
+}
+
 // Starts a watering cycle right now: computes temp_adjust from the current
 // average temperature (or pins it to 1.0x if scaling is off), arms the
-// cycle's 80-minute safety timer, and marks the cycle as running. Shared by
+// cycle's safety timer (computed length + 5 min), and marks the cycle as running. Shared by
 // the scheduled auto-trigger and the manual "Run Now" API so a manual run
 // always gets a fresh scaling factor instead of reusing whatever a prior
 // scheduled cycle last computed.
@@ -179,7 +218,10 @@ void startCycle() {
     state.temp_adjust = 1000;  // 1.0x: run times used as-is
   }
 
-  timer.in(4800000, shutOff);  // safety: force all valves off 80 min after cycle start
+  // Safety: force all valves off 5 min after the cycle should have ended.
+  unsigned long cycleMs = 0;
+  for (int i = 0; i < NUM_RELAYS; i++) cycleMs += state.runtime[i] * state.temp_adjust;
+  timer.in(cycleMs + 300000UL, cycleTimeout);
   state.runCycle = true;
 }
 
