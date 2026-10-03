@@ -33,7 +33,9 @@ bool weatherEt0(float &mm) {
   return true;
 }
 
-// Blocking (<= ~4 s); only called when no valve is open, so valve timing is unaffected.
+// Blocking: DNS (up to ~10 s on ESP8266) + connect + 4 s read. Only called when
+// no valve is open, so valve timing is unaffected; a cycle due meanwhile still
+// starts within the 5-minute catch-up window.
 static void fetchEt0() {
   const uint32_t heapBefore = ESP.getFreeHeap();
   String url = "http://api.open-meteo.com/v1/forecast?latitude=" + String(LATITUDE_DEG, 4) +
@@ -44,6 +46,9 @@ static void fetchEt0() {
     WiFiClient client;
     HTTPClient http;
     http.setTimeout(4000);
+#if defined(ESP32)
+    http.setConnectTimeout(3000);  // default 5000 ms
+#endif
     if (!http.begin(client, url)) {
       webPrint("Weather: fetch failed (begin), retry in 1h\n");
       return;
@@ -105,5 +110,13 @@ void updateWeather() {
 
   attempted = true;
   lastAttemptMs = millis();
+#if defined(ESP32)
+  // A slow DNS/connect can outlast the 5 s loop watchdog and reset the board.
+  // Safe to suspend it here: no valve is open (checked above).
+  disableLoopWDT();
   fetchEt0();
+  enableLoopWDT();
+#else
+  fetchEt0();  // HTTPClient yields, which feeds the ESP8266 watchdog
+#endif
 }
