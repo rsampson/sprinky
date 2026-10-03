@@ -50,6 +50,7 @@ src/
   relay.cpp              valve control + watering-schedule state machine
   wifi_manager.cpp / .h  Wi-Fi connect/reconnect state machine, AP fallback
   time_manager.cpp / .h  NTP client, all Timezone/DST rule definitions
+  weather.cpp / .h       daily Open-Meteo ET0 fetch + RAM cache
   web_server.cpp / .h    the AsyncWebServer instance + all routes + persistence
   web_assets.cpp / .h    the dashboard (INDEX_HTML / STYLE_CSS / APP_JS PROGMEM)
   debug.cpp              webPrint() logging to Serial + a circular buffer
@@ -124,6 +125,11 @@ Almost all per-device and per-hardware variation is compile-time:
   ~70°F when no sensor is detected: the DS18B20 path checks
   `sensors.getDeviceCount()`, the analog path treats a raw ADC reading < 100 as
   a floating/disconnected pin.
+- **`LATITUDE_DEG` / `LONGITUDE_DEG`** — site location for the Hargreaves
+  radiation term and the Open-Meteo fetch.
+- **`ET_REFERENCE[]`** — per-season typical day: Hargreaves inputs
+  (`dayOfYear`, `meanF`, `rangeF`) and `et0mm`, the Penman-Monteith ET₀
+  (mm/day) reference for the Open-Meteo source.
 - **`LED_BUILTIN`**, buffer-size constants — rarely touched.
 
 ESP32-vs-ESP8266 differences (temp-sensor pin, `Serial` debug macro, mDNS
@@ -142,7 +148,7 @@ struct and externs). No class hierarchy.
   `loop()` each iteration: `handleWiFi()` (Wi-Fi state machine),
   `timeClient.update()` (NTP), `controlRelays()`, `ElegantOTA.loop()`, and —
   throttled to once/second — `timer.tick()`, `state.cur_temp = getTempF()`,
-  `ComputeAveTemp()`, LED heartbeat. On ESP8266 it also calls `MDNS.update()`.
+  `ComputeAveTemp()`, `updateAutoSeason()`, `updateWeather()`, LED heartbeat. On ESP8266 it also calls `MDNS.update()`.
   There is **no server-push step**: the browser polls `/api/status`, so `loop()`
   knows nothing about connected clients.
 - **`sprinky.h`** — `struct SprinklerState` (`disable`, `runCycle`,
@@ -158,13 +164,17 @@ struct and externs). No class hierarchy.
     if today is enabled, then fires at `state.runHour:state.runMinute:00` if
     `runCycle` is false. At cycle start it computes `state.temp_adjust`: if
     `state.tempScaling` is on, `computeEtScale()` × 1000 (seconds→ms factor
-    folded in). That is the FAO-56 Hargreaves ET₀ of the last 24 hourly
+    folded in). If `weatherEt0()` has yesterday's Open-Meteo Penman-Monteith
+    ET₀, that is divided by the season's `ET_REFERENCE[curSeason].et0mm`
+    (logged `ET0 … [open-meteo]`). Otherwise it is the FAO-56 Hargreaves ET₀ of the last 24 hourly
     `dayBuffer` samples (mean, max−min swing, today's day of year,
     `LATITUDE_DEG`) divided by ET₀ of the active season's typical day
     (`ET_REFERENCE[curSeason]` in `config.h`), clamped to
     `ET_SCALE_MIN`–`ET_SCALE_MAX`; it falls back to 1.0× with <12 samples or a
-    <2 °F swing (dead sensor), and logs the ET0 line to the Status page;
-    otherwise it's pinned to `1000` (1.0×, run times used exactly as entered).
+    <2 °F swing (dead sensor), and logs the ET0 line (tagged `[sensor]`) to the
+    Status page; otherwise it's pinned to `1000` (1.0×, run times used exactly
+    as entered). The source used is kept in `etSource` (`"open-meteo"`,
+    `"sensor"`, `"none"` = fell back to 100%, `"off"`) for `/api/status`.
     Per-valve start times chain as `START1..START9` macro offsets from
     `state.start_time_ms`, each `state.runtime[i] * state.temp_adjust`.
   - **Safety timer** (`timer`, arduino-timer): force-shuts all valves (and
@@ -201,6 +211,17 @@ struct and externs). No class hierarchy.
   `web_assets.cpp`. The selector value string must be ≤15 chars (ESP32 NVS key
   limit is not the constraint here, but keep codes short/distinct; note China
   uses `CNST`, not `CST`, to avoid colliding with US Central).
+- **`weather.cpp` / `.h`** — `updateWeather()` (1 s housekeeping) fetches
+  yesterday's `et0_fao_evapotranspiration` from
+  `http://api.open-meteo.com/v1/forecast` (plain HTTP — no TLS on ESP8266) for
+  `LATITUDE_DEG`/`LONGITUDE_DEG`, with a **blocking** `HTTPClient` (4 s timeout).
+  It only fetches when WiFi is up (not AP mode), the clock is NTP-synced, no
+  cycle is running and no valve is open: once after boot, then from 01:00
+  local, retrying hourly until it has yesterday's value. The result lives in
+  RAM only. `weatherEt0()` returns it only if it is dated exactly yesterday, so
+  a stale value is never used. The ArduinoJson filter document is sized with
+  `JSON_OBJECT_SIZE`/`JSON_ARRAY_SIZE` — if it overflows, ET0 is silently
+  filtered out and always reads `null`.
 - **`web_server.cpp` / `.h`** — owns the single `AsyncWebServer server` (port
   80) and `setUpWebServer()`, called from `setup()`. `ElegantOTA.begin(&server)`
   runs right after on the same instance, so `/update` works unchanged. Serves
@@ -222,7 +243,7 @@ struct and externs). No class hierarchy.
 
 `GET /api/status` (polled every 1 s) returns: `hostname`, `time`, `date`, `timezone`,
 `timezoneCode`, `tempF`, `avgTempF`, `rssi`, `lastRunMinutes`, `disabled`,
-`tempScaling`, `runHour`, `runMinute`, `activeDays`, `season`, `ssid`,
+`tempScaling`, `etSource`, `runHour`, `runMinute`, `activeDays`, `season`, `ssid`,
 `apMode`, `log`, and a `valves[]` array (`name`, `runtime`, `on`).
 
 POST actions (JSON body unless noted), each mirroring what an old ESPUI
