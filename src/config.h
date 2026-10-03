@@ -42,21 +42,29 @@ constexpr float ESP8266_A0_FULL_SCALE_MV = 1000.0f;
 // so each season profile's configured minutes mean "a typical day in that
 // season". Latitude sets the solar-radiation term (north positive).
 constexpr float LATITUDE_DEG = 33.0f;
+// Longitude (east positive). Set it together with LATITUDE_DEG for your site:
+// the pair also locates the Open-Meteo ET0 fetch (weather.cpp).
+constexpr float LONGITUDE_DEG = -117.0f;
 
 // Typical day per season profile, in profile order Summer/Fall/Winter/Spring:
-// day of year (mid-season), 24h mean temp (F), daily max-min swing (F).
+// day of year (mid-season), 24h mean temp (F), daily max-min swing (F), and
+// Penman-Monteith ET0 (mm/day) -- the reference for the Open-Meteo source.
 // Rough Southern California values -- tune them from the "ET0 ... Tmean/swing"
-// lines logged on the Status page each run.
+// lines logged on the Status page each run. The et0mm values are 2025
+// Open-Meteo monthly means at 33N 117W; replace them with your site's from
+// archive-api.open-meteo.com/v1/archive?...&daily=et0_fao_evapotranspiration
+// or tune them from the "ET0 ... [open-meteo]" log lines.
 struct EtReference {
   int dayOfYear;
   float meanF;
   float rangeF;
+  float et0mm;  // typical-day Penman-Monteith ET0 (mm/day), reference for the Open-Meteo source
 };
 constexpr EtReference ET_REFERENCE[] = {
-  { 196, 74.0f, 22.0f },  // Summer (mid-July)
-  { 288, 67.0f, 22.0f },  // Fall   (mid-October)
-  { 15, 56.0f, 20.0f },   // Winter (mid-January)
-  { 105, 62.0f, 20.0f },  // Spring (mid-April)
+  { 196, 74.0f, 22.0f, 5.7f },  // Summer (mid-July)
+  { 288, 67.0f, 22.0f, 3.4f },  // Fall   (mid-October)
+  { 15, 56.0f, 20.0f, 3.0f },   // Winter (mid-January)
+  { 105, 62.0f, 20.0f, 4.0f },  // Spring (mid-April)
 };
 
 // Safety clamp on the computed run-time factor.
