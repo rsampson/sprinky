@@ -63,6 +63,12 @@ static void handleStatus(AsyncWebServerRequest *request) {
   doc["tempF"] = (int)state.cur_temp;
   doc["avgTempF"] = state.avg_temp;
   doc["rssi"] = WiFi.RSSI();
+  doc["freeHeap"] = ESP.getFreeHeap();
+#if defined(ESP32)
+  doc["maxBlock"] = ESP.getMaxAllocHeap();
+#else
+  doc["maxBlock"] = ESP.getMaxFreeBlockSize();  // largest contiguous allocation (fragmentation)
+#endif
   doc["ip"] = WiFi.localIP().toString();
   doc["lastRunMinutes"] = state.lastRunMinutes;
   doc["disabled"] = state.wateringDisabled;

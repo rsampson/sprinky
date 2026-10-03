@@ -245,7 +245,8 @@ struct and externs). No class hierarchy.
 ### Web API
 
 `GET /api/status` (polled every 1 s) returns: `hostname`, `time`, `date`, `timezone`,
-`timezoneCode`, `tempF`, `avgTempF`, `rssi`, `lastRunMinutes`, `disabled`,
+`timezoneCode`, `tempF`, `avgTempF`, `rssi`, `freeHeap`, `maxBlock` (bytes; largest
+allocatable block), `lastRunMinutes`, `disabled`,
 `tempScaling`, `etSource`, `runHour`, `runMinute`, `activeDays`, `season`, `ssid`,
 `apMode`, `log`, and a `valves[]` array (`name`, `runtime`, `on`).
 
