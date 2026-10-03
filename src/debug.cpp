@@ -28,7 +28,9 @@ void webPrint(const char *format, ...) {
   Serial.print(buffer); // Direct debugging output
   // Add formatted string to circular buffer
   for (size_t i = 0; i < bufferLen; i++) {
-    if (!circBuff.push(buffer[i])) {
+    // Make room before pushing: push() on a full buffer overwrites the oldest
+    // char and returns false, so pushing first would store this char twice.
+    if (circBuff.isFull()) {
       // Remove old data until encountering '\n'
       while (!circBuff.isEmpty() && circBuff.first() != '\n') {
         circBuff.shift();
@@ -36,8 +38,8 @@ void webPrint(const char *format, ...) {
       if (!circBuff.isEmpty()) {
         circBuff.shift(); // Remove the trailing '\n'
       }
-      circBuff.push(buffer[i]); // retry now that space has been freed
     }
+    circBuff.push(buffer[i]);
   }
 }
 
