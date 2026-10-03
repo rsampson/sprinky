@@ -291,7 +291,8 @@ static void handleTimezone(AsyncWebServerRequest *request, JsonVariant &json) {
   tz = TZstringToPointer(tzstring);
   preferences.putString("timezone", tzstring);
   printTZ();
-  setTime(currentLocalTime());
+  time_t t = currentLocalTime();
+  if (t) setTime(t);  // 0 = no trustworthy NTP time; keep the current clock
   request->send(200, "text/plain", "ok");
 }
 

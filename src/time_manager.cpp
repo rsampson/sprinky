@@ -86,9 +86,21 @@ String Days[] = {"Undefined", "Sunday", "Monday", "Tuesday",
 
 // --- Helper functions ---
 
-// Return time zone and DST adjusted time from server
+// Earliest UTC time we accept from NTP (2024-01-01).
+const unsigned long MIN_VALID_EPOCH = 1704067200UL;
+// NTPClient doesn't validate replies: a Kiss-o'-Death (e.g. pool rate
+// limiting) or short packet leaves a zero transmit timestamp, which it turns
+// into 2036-02-07 06:28:16 UTC. Reject anything within a day of that.
+const unsigned long NTP_ZERO_EPOCH = 2085978496UL;
+
+// Return time zone and DST adjusted time from server, or 0 if the server
+// time can't be trusted (TimeLib then keeps its own clock and retries).
 time_t currentLocalTime(void) {
-  time_t serv_time = tz->toLocal(timeClient.getEpochTime());
+  unsigned long utc = timeClient.getEpochTime();
+  if (!timeClient.isTimeSet() || utc < MIN_VALID_EPOCH ||
+      utc - NTP_ZERO_EPOCH < 86400UL)
+    return 0;
+  time_t serv_time = tz->toLocal(utc);
   return (serv_time);
 }
 
