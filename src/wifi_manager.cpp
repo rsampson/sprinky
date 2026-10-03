@@ -16,6 +16,10 @@ const unsigned long WIFI_CONNECT_TIMEOUT =
     15000; // 15 seconds connection timeout
 const unsigned long WIFI_CHECK_INTERVAL =
     10000; // Check connection integrity every 10 seconds
+#if !defined(ESP32)
+const unsigned long MDNS_ANNOUNCE_INTERVAL =
+    60000; // re-announce well inside the 120 s mDNS host-record TTL
+#endif
 
 char ipStr[] = "xxx.xxx.xxx.xxx"; // local IP as text, filled in on connect
 
@@ -196,6 +200,18 @@ void handleWiFi() {
   }
 
   case WIFI_STATE_CONNECTED: {
+#if !defined(ESP32)
+    // The ESP8266 only intermittently receives multicast mDNS queries, so
+    // clients' cached <hostname>.local record (120 s TTL) expires and the name
+    // stops resolving for a minute or more at a time. Announcing unsolicited
+    // every 60 s keeps every client's cache fresh without needing to hear the
+    // queries at all.
+    static unsigned long lastAnnounceMs = 0;
+    if (currentMillis - lastAnnounceMs >= MDNS_ANNOUNCE_INTERVAL) {
+      lastAnnounceMs = currentMillis;
+      MDNS.announce();
+    }
+#endif
     // Periodically check the connection integrity
     if (currentMillis - wifiStateTimer >= WIFI_CHECK_INTERVAL) {
       wifiStateTimer = currentMillis; // reset check timer
