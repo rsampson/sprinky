@@ -12,8 +12,6 @@
 #include <ESP8266HTTPClient.h>
 #endif
 
-extern bool valveIsOpen[NUM_RELAYS];  // relay.cpp
-
 // Yesterday's ET0 as last fetched, keyed by its local calendar day (YYYYMMDD).
 // RAM only: a reboot just fetches it again.
 static float cachedMm = 0;
@@ -27,8 +25,12 @@ static long dayKey(time_t t) {
   return (long)year(t) * 10000 + month(t) * 100 + day(t);
 }
 
+static bool haveYesterday(time_t t) {
+  return cachedKey == dayKey(t - SECS_PER_DAY);
+}
+
 bool weatherEt0(float &mm) {
-  if (cachedKey != dayKey(now() - SECS_PER_DAY)) return false;
+  if (!haveYesterday(now())) return false;
   mm = cachedMm;
   return true;
 }
@@ -37,7 +39,6 @@ bool weatherEt0(float &mm) {
 // no valve is open, so valve timing is unaffected; a cycle due meanwhile still
 // starts within the 5-minute catch-up window.
 static void fetchEt0() {
-  const uint32_t heapBefore = ESP.getFreeHeap();
   String url = "http://api.open-meteo.com/v1/forecast?latitude=" + String(LATITUDE_DEG, 4) +
                "&longitude=" + String(LONGITUDE_DEG, 4) +
                "&daily=et0_fao_evapotranspiration&past_days=1&forecast_days=0&timezone=auto";
@@ -74,7 +75,7 @@ static void fetchEt0() {
     return;
   }
   const char *date = doc["daily"]["time"][0];
-  if (!date || strlen(date) != 10 || date[4] != '-' || date[7] != '-') {
+  if (!date) {  // a malformed date just yields a key that never matches yesterday
     webPrint("Weather: bad response (date), retry in 1h\n");
     return;
   }
@@ -92,18 +93,15 @@ static void fetchEt0() {
   cachedKey = atol(date) * 10000 + atol(date + 5) * 100 + atol(date + 8);  // atol stops at '-'
   cachedMm = mm;
   // integer tenths: avoids relying on %f support in webPrint's vsnprintf
-  webPrint("Weather: ET0 %d.%dmm for %s (heap %u->%u)\n", (int)(mm * 10) / 10, (int)(mm * 10) % 10, date,
-           (unsigned)heapBefore, (unsigned)ESP.getFreeHeap());
+  webPrint("Weather: ET0 %d.%dmm for %s\n", (int)(mm * 10) / 10, (int)(mm * 10) % 10, date);
 }
 
 void updateWeather() {
   if (WiFi.status() != WL_CONNECTED || ap_mode) return;
   const time_t t = now();
   if (year(t) < 2024) return;  // clock not NTP-synced yet
-  if (state.runCycle) return;
-  for (int i = 0; i < NUM_RELAYS; i++)
-    if (valveIsOpen[i]) return;
-  if (cachedKey == dayKey(t - SECS_PER_DAY)) return;  // already have yesterday's
+  if (haveYesterday(t)) return;
+  if (state.runCycle || anyValveOpen()) return;
   // After the boot attempt: wait until 01:00 (yesterday's value has settled),
   // then retry at most hourly. Unsigned subtraction is millis()-rollover safe.
   if (attempted && (hour(t) < 1 || millis() - lastAttemptMs < RETRY_MS)) return;

@@ -39,10 +39,14 @@ bool shutOff(void*) {  // bool return and void* makes timer api happy
 // the cycle sequencing: if a valve has been open longer than relayOn() allowed,
 // close everything. Bounds any valve to its window plus a minute even if the
 // timer, the cycle logic or the stored run times go wrong.
+bool anyValveOpen() {
+  for (int i = 0; i < NUM_RELAYS; i++)
+    if (valveIsOpen[i]) return true;
+  return false;
+}
+
 void valveWatchdog() {
-  bool anyOpen = false;
-  for (int i = 0; i < NUM_RELAYS; i++) anyOpen |= valveIsOpen[i];
-  if (!anyOpen) return;
+  if (!anyValveOpen()) return;
   unsigned long openFor = millis() - valveOpenedMs;
   if (openFor > valveMaxOpenMs) {
     void* garb = nullptr;
@@ -162,18 +166,18 @@ const char *etSource = "none";
 // day (ET_REFERENCE in config.h). Clamped either way. The sensor path falls
 // back to 1.0 when the history is too short (just booted) or flat (dead sensor
 // reads a constant 70F), since Hargreaves needs a real daily temperature swing.
+static float clampScale(float scale) {
+  if (scale < ET_SCALE_MIN) return ET_SCALE_MIN;
+  if (scale > ET_SCALE_MAX) return ET_SCALE_MAX;
+  return scale;
+}
+
 static float computeEtScale() {
+  etSource = "none";  // until a source produces a factor
   const EtReference &ref = ET_REFERENCE[curSeason < 4 ? curSeason : 0];
   float mm;
-  if (weatherEt0(mm)) {
-    float scale = mm / ref.et0mm;
-    if (!isfinite(scale)) {
-      webPrint("ET scaling: invalid result, using 100%%\n");
-      etSource = "none";
-      return 1.0f;
-    }
-    if (scale < ET_SCALE_MIN) scale = ET_SCALE_MIN;
-    if (scale > ET_SCALE_MAX) scale = ET_SCALE_MAX;
+  if (weatherEt0(mm)) {  // mm is range-checked and et0mm > 0, so the ratio is finite
+    const float scale = clampScale(mm / ref.et0mm);
     webPrint("ET0 %d.%dmm [open-meteo] (ref %d.%d) -> %d%%\n", (int)(mm * 10) / 10, (int)(mm * 10) % 10,
              (int)(ref.et0mm * 10) / 10, (int)(ref.et0mm * 10) % 10, (int)(scale * 100));
     etSource = "open-meteo";
@@ -183,7 +187,6 @@ static float computeEtScale() {
   const auto n = dayBuffer.size();
   if (n < 12) {
     webPrint("ET scaling: only %d h of temps, using 100%%\n", (int)n);
-    etSource = "none";
     return 1.0f;
   }
   float tMax = dayBuffer[0], tMin = dayBuffer[0], sum = 0;
@@ -197,7 +200,6 @@ static float computeEtScale() {
   const float rangeF = tMax - tMin;
   if (rangeF < 2.0f) {
     webPrint("ET scaling: temp swing %dF too flat (sensor?), using 100%%\n", (int)rangeF);
-    etSource = "none";
     return 1.0f;
   }
 
@@ -206,11 +208,9 @@ static float computeEtScale() {
   float scale = et0 / etRef;
   if (!isfinite(scale)) {  // NaN slips past the clamps below and would corrupt valve timing
     webPrint("ET scaling: invalid result, using 100%%\n");
-    etSource = "none";
     return 1.0f;
   }
-  if (scale < ET_SCALE_MIN) scale = ET_SCALE_MIN;
-  if (scale > ET_SCALE_MAX) scale = ET_SCALE_MAX;
+  scale = clampScale(scale);
 
   // integer tenths: avoids relying on %f support in webPrint's vsnprintf
   webPrint("ET0 %d.%dmm [sensor] (ref %d.%d), Tmean %dF swing %dF -> %d%%\n",

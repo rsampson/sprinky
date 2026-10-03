@@ -58,7 +58,7 @@ struct EtReference {
   int dayOfYear;
   float meanF;
   float rangeF;
-  float et0mm;  // typical-day Penman-Monteith ET0 (mm/day), reference for the Open-Meteo source
+  float et0mm;
 };
 constexpr EtReference ET_REFERENCE[] = {
   { 196, 74.0f, 22.0f, 5.7f },  // Summer (mid-July)

@@ -214,10 +214,10 @@ struct and externs). No class hierarchy.
 - **`weather.cpp` / `.h`** — `updateWeather()` (1 s housekeeping) fetches
   yesterday's `et0_fao_evapotranspiration` from
   `http://api.open-meteo.com/v1/forecast` (plain HTTP — no TLS on ESP8266) for
-  `LATITUDE_DEG`/`LONGITUDE_DEG`, with a **blocking** `HTTPClient` (DNS + connect + 4 s read; can stall
-  `loop()` for several seconds, ~18 s worst case on ESP8266, which is why it
-  never runs with a valve open. On ESP32 the loop watchdog (5 s) is suspended
-  around the fetch).
+  `LATITUDE_DEG`/`LONGITUDE_DEG`, with a **blocking** `HTTPClient` that can stall
+  `loop()` for seconds (DNS + connect + 4 s read; ~18 s worst case on ESP8266),
+  so it never runs with a valve open. On ESP32 the 5 s loop watchdog is
+  suspended around the fetch.
   It only fetches when WiFi is up (not AP mode), the clock is NTP-synced, no
   cycle is running and no valve is open: once after boot, then from 01:00
   local, retrying hourly until it has yesterday's value. The result lives in

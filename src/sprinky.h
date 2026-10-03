@@ -64,4 +64,5 @@ void allOff();
 void webPrint(const char *format, ...);
 bool shutOff(void *);
 void valveWatchdog();
+bool anyValveOpen();
 // Time utility functions are declared in time_manager.h
