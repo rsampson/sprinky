@@ -67,6 +67,7 @@ static void handleStatus(AsyncWebServerRequest *request) {
   doc["lastRunMinutes"] = state.lastRunMinutes;
   doc["disabled"] = state.wateringDisabled;
   doc["tempScaling"] = state.tempScaling;
+  doc["etSource"] = etSource;
   doc["runHour"] = state.runHour;
   doc["runMinute"] = state.runMinute;
   doc["activeDays"] = state.activeDays;

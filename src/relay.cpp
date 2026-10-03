@@ -1,4 +1,5 @@
 #include "sprinky.h"
+#include "weather.h"
 #include <TimeLib.h>
 
 
@@ -151,14 +152,38 @@ static int dayOfYear(time_t t) {
   return cum[month(t) - 1] + day(t) + ((leap && month(t) > 2) ? 1 : 0);
 }
 
-// Run-time factor = ET0 over the last 24 hourly samples / ET0 of the active
-// season's typical day (ET_REFERENCE in config.h), clamped. Falls back to 1.0
-// when the history is too short (just booted) or flat (dead sensor reads a
-// constant 70F), since Hargreaves needs a real daily temperature swing.
+// Which ET0 source scaled the last cycle: "open-meteo", "sensor", "none"
+// (fell back to 100%) or "off" (scaling disabled). Reported in /api/status.
+const char *etSource = "none";
+
+// Run-time factor = yesterday's Open-Meteo Penman-Monteith ET0 / the active
+// season's typical-day et0mm, when a fetch for yesterday succeeded. Otherwise
+// Hargreaves ET0 over the last 24 hourly samples / ET0 of the season's typical
+// day (ET_REFERENCE in config.h). Clamped either way. The sensor path falls
+// back to 1.0 when the history is too short (just booted) or flat (dead sensor
+// reads a constant 70F), since Hargreaves needs a real daily temperature swing.
 static float computeEtScale() {
+  const EtReference &ref = ET_REFERENCE[curSeason < 4 ? curSeason : 0];
+  float mm;
+  if (weatherEt0(mm)) {
+    float scale = mm / ref.et0mm;
+    if (!isfinite(scale)) {
+      webPrint("ET scaling: invalid result, using 100%%\n");
+      etSource = "none";
+      return 1.0f;
+    }
+    if (scale < ET_SCALE_MIN) scale = ET_SCALE_MIN;
+    if (scale > ET_SCALE_MAX) scale = ET_SCALE_MAX;
+    webPrint("ET0 %d.%dmm [open-meteo] (ref %d.%d) -> %d%%\n", (int)(mm * 10) / 10, (int)(mm * 10) % 10,
+             (int)(ref.et0mm * 10) / 10, (int)(ref.et0mm * 10) % 10, (int)(scale * 100));
+    etSource = "open-meteo";
+    return scale;
+  }
+
   const auto n = dayBuffer.size();
   if (n < 12) {
     webPrint("ET scaling: only %d h of temps, using 100%%\n", (int)n);
+    etSource = "none";
     return 1.0f;
   }
   float tMax = dayBuffer[0], tMin = dayBuffer[0], sum = 0;
@@ -172,24 +197,26 @@ static float computeEtScale() {
   const float rangeF = tMax - tMin;
   if (rangeF < 2.0f) {
     webPrint("ET scaling: temp swing %dF too flat (sensor?), using 100%%\n", (int)rangeF);
+    etSource = "none";
     return 1.0f;
   }
 
-  const EtReference &ref = ET_REFERENCE[curSeason < 4 ? curSeason : 0];
   const float et0 = hargreavesET0(dayOfYear(now()), meanF, rangeF);
   const float etRef = hargreavesET0(ref.dayOfYear, ref.meanF, ref.rangeF);
   float scale = et0 / etRef;
   if (!isfinite(scale)) {  // NaN slips past the clamps below and would corrupt valve timing
     webPrint("ET scaling: invalid result, using 100%%\n");
+    etSource = "none";
     return 1.0f;
   }
   if (scale < ET_SCALE_MIN) scale = ET_SCALE_MIN;
   if (scale > ET_SCALE_MAX) scale = ET_SCALE_MAX;
 
   // integer tenths: avoids relying on %f support in webPrint's vsnprintf
-  webPrint("ET0 %d.%dmm (ref %d.%d), Tmean %dF swing %dF -> %d%%\n",
+  webPrint("ET0 %d.%dmm [sensor] (ref %d.%d), Tmean %dF swing %dF -> %d%%\n",
            (int)(et0 * 10) / 10, (int)(et0 * 10) % 10, (int)(etRef * 10) / 10, (int)(etRef * 10) % 10,
            (int)meanF, (int)rangeF, (int)(scale * 100));
+  etSource = "sensor";
   return scale;
 }
 
@@ -216,6 +243,7 @@ void startCycle() {
     state.temp_adjust = (uint32_t)(computeEtScale() * 1000.0f);
   } else {
     state.temp_adjust = 1000;  // 1.0x: run times used as-is
+    etSource = "off";
   }
 
   // Safety: force all valves off 5 min after the cycle should have ended.
