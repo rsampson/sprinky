@@ -195,6 +195,12 @@ static void handleRun(AsyncWebServerRequest *request) {
   request->send(200, "text/plain", "ok");
 }
 
+static void handleStop(AsyncWebServerRequest *request) {
+  pendingCmd = CMD_STOP;
+  webPrint("Watering sequence cancelled\n");
+  request->send(200, "text/plain", "ok");
+}
+
 static void handleSchedule(AsyncWebServerRequest *request, JsonVariant &json) {
   JsonObject body = json.as<JsonObject>();
 
@@ -430,6 +436,7 @@ void setUpWebServer() {
 
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/run", HTTP_POST, handleRun);
+  server.on("/api/stop", HTTP_POST, handleStop);
   server.on("/api/reboot", HTTP_POST, handleReboot);
 
   server.addHandler(jsonHandler("/api/watering", handleWatering));

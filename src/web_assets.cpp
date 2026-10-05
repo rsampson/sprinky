@@ -103,7 +103,10 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       </div>
       <div class="card-sub" style="margin-bottom: 0.5rem">Saves run time, days, and valve names/run times below, all to the selected season profile.</div>
 
-      <button id="run-now" class="btn">Run Watering Sequence Now</button>
+      <div class="btn-row">
+        <button id="run-now" class="btn">Run Watering Sequence Now</button>
+        <button id="cancel-run" class="btn danger">Cancel Watering Sequence</button>
+      </div>
     </div>
 
     <div class="card wide">
@@ -709,6 +712,10 @@ const char APP_JS[] PROGMEM = R"JS(
 
   $('run-now').addEventListener('click', () => {
     fetch('/api/run', { method: 'POST' }).then(refresh);
+  });
+
+  $('cancel-run').addEventListener('click', () => {
+    fetch('/api/stop', { method: 'POST' }).then(refresh);
   });
 
   $('temp-scaling').addEventListener('click', () => {
