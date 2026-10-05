@@ -122,11 +122,11 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <div class="card-label">📡 WiFi Credentials</div>
       <div class="form-row">
         <label for="wifi-ssid">SSID</label>
-        <input type="text" id="wifi-ssid" maxlength="32">
+        <input type="text" id="wifi-ssid" maxlength="32" autocomplete="off">
       </div>
       <div class="form-row">
         <label for="wifi-pass">Password</label>
-        <input type="password" id="wifi-pass" maxlength="64">
+        <input type="password" id="wifi-pass" maxlength="64" autocomplete="new-password">
       </div>
       <button id="save-wifi" class="btn primary">Save</button>
       <span id="save-wifi-status" class="save-status"></span>
@@ -571,7 +571,7 @@ const char APP_JS[] PROGMEM = R"JS(
       row.className = 'valve-row';
       row.innerHTML =
         '<span class="valve-name-wrap">' +
-          '<input type="text" id="valve-name-' + i + '" value="" maxlength="14" ' +
+          '<input type="text" id="valve-name-' + i + '" value="" maxlength="14" autocomplete="off" ' +
           'placeholder="Valve ' + (i + 1) + ' name" ' +
           'aria-label="Name for valve ' + (i + 1) + '" ' +
           'title="Tap to rename this valve"></span>' +
