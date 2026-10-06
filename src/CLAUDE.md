@@ -50,7 +50,7 @@ src/
   relay.cpp              valve control + watering-schedule state machine
   wifi_manager.cpp / .h  Wi-Fi connect/reconnect state machine, AP fallback
   time_manager.cpp / .h  NTP client, all Timezone/DST rule definitions
-  weather.cpp / .h       daily Open-Meteo ET0 fetch + RAM cache
+  weather.cpp / .h       daily Open-Meteo ET0 fetch + RAM cache, site location
   web_server.cpp / .h    the AsyncWebServer instance + all routes + persistence
   web_assets.cpp / .h    the dashboard (INDEX_HTML / STYLE_CSS / APP_JS PROGMEM)
   debug.cpp              webPrint() logging to Serial + a circular buffer
@@ -125,8 +125,10 @@ Almost all per-device and per-hardware variation is compile-time:
   ~70°F when no sensor is detected: the DS18B20 path checks
   `sensors.getDeviceCount()`, the analog path treats a raw ADC reading < 100 as
   a floating/disconnected pin.
-- **`LATITUDE_DEG` / `LONGITUDE_DEG`** — site location for the Hargreaves
-  radiation term and the Open-Meteo fetch.
+- **`LATITUDE_DEG` / `LONGITUDE_DEG`** — fallback site location only; the live
+  one is `siteLat`/`siteLon` (see `weather.cpp`).
+- **`RAIN_SKIP[]`** — `{hours, mm}` rain-skip tiers (24 h 2.5 mm, 48 h 13 mm,
+  72 h 25 mm), ascending by `hours`.
 - **`ET_REFERENCE[]`** — per-season typical day: Hargreaves inputs
   (`dayOfYear`, `meanF`, `rangeF`) and `et0mm`, the Penman-Monteith ET₀
   (mm/day) reference for the Open-Meteo source.
@@ -168,7 +170,7 @@ struct and externs). No class hierarchy.
     ET₀, that is divided by the season's `ET_REFERENCE[curSeason].et0mm`
     (logged `ET0 … [open-meteo]`). Otherwise it is the FAO-56 Hargreaves ET₀ of the last 24 hourly
     `dayBuffer` samples (mean, max−min swing, today's day of year,
-    `LATITUDE_DEG`) divided by ET₀ of the active season's typical day
+    `siteLat`) divided by ET₀ of the active season's typical day
     (`ET_REFERENCE[curSeason]` in `config.h`), clamped to
     `ET_SCALE_MIN`–`ET_SCALE_MAX`; it falls back to 1.0× with <12 samples or a
     <2 °F swing (dead sensor), and logs the ET0 line (tagged `[sensor]`) to the
@@ -197,7 +199,10 @@ struct and externs). No class hierarchy.
   - The "buzz relay to clear a jammed valve" loop in `relayOn()` is **commented
     out** — check before assuming it runs.
   - `/api/run` ("Run Watering Sequence Now") bypasses both the `activeDays`
-    check and the daily start time.
+    check and the daily start time, and the rain skip.
+  - **Rain skip**: the scheduled trigger sets `lastAutoRunDayKey` first, then
+    calls `startCycle()` only if `!recentRainSkip()` (`weather.cpp`), so a
+    skipped day isn't retried within the catch-up window.
 - **`wifi_manager.cpp` / `.h`** — Wi-Fi as an explicit state machine
   (`DISCONNECTED → CONNECTING → CONNECTED`, periodic connectivity checks,
   hard-reset-and-retry on failure). Falls back to AP mode (`ap_mode` global) at
@@ -214,7 +219,7 @@ struct and externs). No class hierarchy.
 - **`weather.cpp` / `.h`** — `updateWeather()` (1 s housekeeping) fetches
   yesterday's `et0_fao_evapotranspiration` from
   `http://api.open-meteo.com/v1/forecast` (plain HTTP — no TLS on ESP8266) for
-  `LATITUDE_DEG`/`LONGITUDE_DEG`, with a **blocking** `HTTPClient` that can stall
+  `siteLat`/`siteLon`, with a **blocking** `HTTPClient` that can stall
   `loop()` for seconds (DNS + connect + 4 s read; ~18 s worst case on ESP8266),
   so it never runs with a valve open. On ESP32 the 5 s loop watchdog is
   suspended around the fetch.
@@ -225,6 +230,28 @@ struct and externs). No class hierarchy.
   a stale value is never used. The ArduinoJson filter document is sized with
   `JSON_OBJECT_SIZE`/`JSON_ARRAY_SIZE` — if it overflows, ET0 is silently
   filtered out and always reads `null`.
+
+  It also owns the **site location** `siteLat`/`siteLon`, read by `relay.cpp`
+  (Hargreaves) and `web_server.cpp` (southern-hemisphere season flip).
+  Precedence: entered on the Setup page (`manual`) > looked up from the public
+  IP via `http://ip-api.com/json/` (`auto`) > `LATITUDE_DEG`/`LONGITUDE_DEG`
+  (`default`). `loadSiteLocation()` restores it in `setup()`. Unless manual,
+  `updateWeather()` runs the lookup once per boot (hourly retry on failure),
+  before the ET0 fetch and under the same no-valve-open / watchdog rules.
+  `/api/location` only queues the change (`requestManualLocation()` /
+  `requestAutoLocation()`); `updateWeather()` applies it in `loop()`. Any move
+  drops the cached ET0 and refetches at once. Flash is written only when the
+  location or its source changes.
+
+  `recentRainSkip()` is a **blocking**, on-demand request (hourly
+  `precipitation`, `past_hours` = the last `RAIN_SKIP[]` tier, `forecast_hours=2`
+  so the hour in progress is included, `timezone=GMT`), called from
+  `controlRelays()` when a scheduled cycle is due. It sums back from the newest
+  hour and returns true if any `RAIN_SKIP[]` tier (`config.h`, ascending
+  `hours`) is met. It fails open (no WiFi / HTTP / JSON error → water) and
+  suspends the ESP32 loop watchdog like `updateWeather()`. Its
+  `DynamicJsonDocument` has +32 bytes for the copied key strings; without them
+  parsing fails with `NoMemory`.
 - **`web_server.cpp` / `.h`** — owns the single `AsyncWebServer server` (port
   80) and `setUpWebServer()`, called from `setup()`. `ElegantOTA.begin(&server)`
   runs right after on the same instance, so `/update` works unchanged. Serves
@@ -248,7 +275,8 @@ struct and externs). No class hierarchy.
 `timezoneCode`, `tempF`, `avgTempF`, `rssi`, `freeHeap`, `maxBlock` (bytes; largest
 allocatable block), `lastRunMinutes`, `disabled`,
 `tempScaling`, `etSource`, `runHour`, `runMinute`, `activeDays`, `season`, `ssid`,
-`apMode`, `log`, and a `valves[]` array (`name`, `runtime`, `on`).
+`apMode`, `lat`, `lon`, `locSource` (`"manual"`/`"auto"`/`"default"`), `log`,
+and a `valves[]` array (`name`, `runtime`, `on`).
 
 POST actions (JSON body unless noted), each mirroring what an old ESPUI
 callback did — same `Preferences` keys, same `relayOn`/`shutOff`/`state` calls,
@@ -264,6 +292,8 @@ just over HTTP:
 | `/api/season` | `{"season":0-3}` | Switch active season profile: load its stored schedule into `state` and apply immediately |
 | `/api/wifi` | `{ssid, pass}` | Store Wi-Fi credentials |
 | `/api/timezone` | `{"tz":"<code>"}` | Set timezone; re-syncs NTP |
+| `/api/location` | `{lat, lon}` or `{"auto":true}` | Enter the site location (±90/±180, else 400), or go back to the IP lookup |
+| `/api/stop` | *(none)* | Cancel the watering sequence: close all valves, end the cycle |
 | `/api/reboot` | *(none)* | Restart after ~0.5 s |
 
 ### Persistence (`Preferences`, NVS-backed, namespace `"Settings"`)
@@ -271,7 +301,8 @@ just over HTTP:
 `preferences.begin("Settings")` is called in `setup()` (`sprinky.cpp`).
 
 **Global keys** (not per-season): `ssid`, `pass`, `timezone`, `disable`,
-`tempScale` (bool, default `false`), `curSeason` (`uint8`, 0-3, default `0` =
+`tempScale` (bool, default `false`), `locSrc` (`uint8`: 0 default, 1 auto,
+2 manual) with `lat`/`lon` (float; unused when `locSrc` is 0), `curSeason` (`uint8`, 0-3, default `0` =
 Summer), `calSeason` (`uint8`, 0-3, the last calendar season seen by
 `updateAutoSeason()`; absent until the first NTP-synced boot).
 
@@ -286,7 +317,7 @@ and just reads `state.*`.
 **Auto-switching**: `updateAutoSeason()` (`web_server.cpp`, called from the
 once-per-second housekeeping in `loop()`) maps the date to a meteorological
 season (Jun–Aug Summer, Sep–Nov Fall, Dec–Feb Winter, Mar–May Spring; flipped
-when `LATITUDE_DEG < 0`). It switches `curSeason` only when that calendar
+when `siteLat < 0`). It switches `curSeason` only when that calendar
 season differs from the persisted `calSeason`, i.e. on a boundary crossing
 (Mar/Jun/Sep/Dec 1), so a manual pick via `/api/season` or `/api/schedule`
 holds until the next boundary. It does nothing before NTP sync (year < 2024)

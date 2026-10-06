@@ -41,9 +41,10 @@ constexpr float ESP8266_A0_FULL_SCALE_MV = 1000.0f;
 // Run times are scaled by ET0(last 24h) / ET0(active season's reference day),
 // so each season profile's configured minutes mean "a typical day in that
 // season". Latitude sets the solar-radiation term (north positive).
+// Fallback site location (north/east positive). Normally left alone: the
+// location is looked up from the public IP address at boot or entered on the
+// Setup page (weather.cpp); these apply only until one of those succeeds.
 constexpr float LATITUDE_DEG = 33.0f;
-// Longitude (east positive). Set it together with LATITUDE_DEG for your site:
-// the pair also locates the Open-Meteo ET0 fetch (weather.cpp).
 constexpr float LONGITUDE_DEG = -117.0f;
 
 // Typical day per season profile, in profile order Summer/Fall/Winter/Spring:
@@ -70,6 +71,22 @@ constexpr EtReference ET_REFERENCE[] = {
 // Safety clamp on the computed run-time factor.
 constexpr float ET_SCALE_MIN = 0.25f;
 constexpr float ET_SCALE_MAX = 2.0f;
+
+// --- Rain skip ---
+// A scheduled run is skipped if Open-Meteo reports at least `mm` of rain in
+// the last `hours` (up to and including the current hour) for any tier. Rain
+// covers roughly rain / daily ET0 days of watering; lengthen for clay soil,
+// shorten for sand. Keep tiers in ascending `hours` order (the last sets how
+// far back the request looks). Run Now is never skipped.
+struct RainSkip {
+  int hours;
+  float mm;
+};
+constexpr RainSkip RAIN_SKIP[] = {
+  { 24, 2.5f },   // 0.1"
+  { 48, 13.0f },  // 0.5"
+  { 72, 25.0f },  // 1"
+};
 
 // Relay active level. Some relay boards are active-low (a LOW signal closes the
 // relay contact / opens the valve). Swap these if your valves energize backwards.

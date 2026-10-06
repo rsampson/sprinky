@@ -188,6 +188,14 @@ void getBootReasonMessage(char *buffer, int bufferlength) {
       snprintf(buffer, bufferlength, "Unknown reset cause %d", resetInfo->reason);
       break;
   };
+  // Where it crashed: decode epc1 against this build's firmware.elf, e.g.
+  // xtensa-lx106-elf-addr2line -pfiaC -e .pio/build/esp12e/firmware.elf <epc1>
+  if (resetInfo->reason == REASON_EXCEPTION_RST || resetInfo->reason == REASON_WDT_RST ||
+      resetInfo->reason == REASON_SOFT_WDT_RST) {
+    size_t n = strlen(buffer);
+    snprintf(buffer + n, bufferlength - n, " (exccause %u, epc1 0x%08x, excvaddr 0x%08x)",
+             resetInfo->exccause, resetInfo->epc1, resetInfo->excvaddr);
+  }
 #endif
 }
 
@@ -217,6 +225,7 @@ void setup() {
     Serial.println("Failed to open preferences.");
     ESP.restart();
   }
+  loadSiteLocation();
 
   setupWiFi();
 

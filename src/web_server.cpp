@@ -1,6 +1,7 @@
 #include "web_server.h"
 #include "web_assets.h"
 #include "sprinky.h"
+#include "weather.h"
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
 #include <TimeLib.h>
@@ -80,6 +81,9 @@ static void handleStatus(AsyncWebServerRequest *request) {
   doc["season"] = curSeason;
   doc["ssid"] = stored_ssid;
   doc["apMode"] = ap_mode;
+  doc["lat"] = siteLat;
+  doc["lon"] = siteLon;
+  doc["locSource"] = siteLocSource();
 
   fetchDebugText();
   doc["log"] = charBuf;
@@ -298,6 +302,28 @@ static void handleWifi(AsyncWebServerRequest *request, JsonVariant &json) {
   request->send(200, "text/plain", "ok");
 }
 
+// {"lat":..,"lon":..} sets the site location by hand; {"auto":true} goes back
+// to the IP lookup. Applied by updateWeather() in loop() (see weather.cpp).
+static void handleLocation(AsyncWebServerRequest *request, JsonVariant &json) {
+  JsonObject body = json.as<JsonObject>();
+  if (body["auto"] | false) {
+    requestAutoLocation();
+    request->send(200, "text/plain", "ok");
+    return;
+  }
+  if (!body["lat"].is<float>() || !body["lon"].is<float>()) {
+    request->send(400, "text/plain", "invalid location");
+    return;
+  }
+  const float lat = body["lat"], lon = body["lon"];
+  if (lat < -90.0f || lat > 90.0f || lon < -180.0f || lon > 180.0f) {
+    request->send(400, "text/plain", "invalid location");
+    return;
+  }
+  requestManualLocation(lat, lon);
+  request->send(200, "text/plain", "ok");
+}
+
 static void handleTimezone(AsyncWebServerRequest *request, JsonVariant &json) {
   JsonObject body = json.as<JsonObject>();
   String tzstring = body["tz"] | "UTC";
@@ -389,11 +415,11 @@ static void seedSeasonFromLegacy() {
 
 // Calendar (meteorological) season for a date, as a profile index:
 // Jun-Aug Summer, Sep-Nov Fall, Dec-Feb Winter, Mar-May Spring. Flipped for
-// the southern hemisphere (negative LATITUDE_DEG).
+// the southern hemisphere (negative latitude).
 static uint8_t calendarSeason(time_t t) {
   static const uint8_t byMonth[12] = { 2, 2, 3, 3, 3, 0, 0, 0, 1, 1, 1, 2 };  // Jan..Dec
   uint8_t s = byMonth[month(t) - 1];
-  return (LATITUDE_DEG < 0) ? (s + 2) % NUM_SEASONS : s;
+  return (siteLat < 0) ? (s + 2) % NUM_SEASONS : s;
 }
 
 // Switch the active season profile when the calendar crosses a season
@@ -445,6 +471,7 @@ void setUpWebServer() {
   server.addHandler(jsonHandler("/api/season", handleSeason));
   server.addHandler(jsonHandler("/api/wifi", handleWifi));
   server.addHandler(jsonHandler("/api/timezone", handleTimezone));
+  server.addHandler(jsonHandler("/api/location", handleLocation));
 
   for (int i = 0; i < NUM_RELAYS; i++) {
     char uri[16];

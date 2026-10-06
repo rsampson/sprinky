@@ -160,6 +160,23 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
     </div>
 
     <div class="card wide">
+      <div class="card-label">📍 Location</div>
+      <div class="card-sub" style="margin-bottom: 0.5rem">Where to get weather for run-time scaling. Decimal degrees, north and east positive.</div>
+      <div class="form-row">
+        <label for="lat">Latitude</label>
+        <input type="number" id="lat" min="-90" max="90" step="any" style="max-width: 7rem">
+        <label for="lon">Longitude</label>
+        <input type="number" id="lon" min="-180" max="180" step="any" style="max-width: 7rem">
+      </div>
+      <div id="loc-source" class="card-sub"></div>
+      <div class="btn-row">
+        <button id="save-location" class="btn primary">Save</button>
+        <button id="auto-location" class="btn">Use automatic location</button>
+        <span id="save-location-status" class="save-status"></span>
+      </div>
+    </div>
+
+    <div class="card wide">
       <div class="card-label">🛠️ Maintenance</div>
       <div class="form-row">
         <a href="/update" class="btn">Firmware Update</a>
@@ -494,6 +511,15 @@ const char APP_JS[] PROGMEM = R"JS(
   // Latest temperature-scaling on/off state from /api/status, for the toggle button.
   let tempScaling = false;
 
+  // Last location shown in the Location fields, so a device-side change (e.g.
+  // the IP lookup finishing) updates them without clobbering an edit.
+  let lastLoc = '';
+  const LOC_SOURCES = {
+    auto: 'Found automatically from this network\'s internet address.',
+    manual: 'Entered by you.',
+    default: 'Default from config.h (automatic lookup not done yet).',
+  };
+
   const $ = (id) => document.getElementById(id);
 
   $('temp-unit').addEventListener('click', () => {
@@ -689,6 +715,15 @@ const char APP_JS[] PROGMEM = R"JS(
     });
 
     $('wifi-ssid').placeholder = s.ssid || '';
+
+    const loc = s.lat.toFixed(4) + ',' + s.lon.toFixed(4);
+    const editing = document.activeElement === $('lat') || document.activeElement === $('lon');
+    if (loc !== lastLoc && !editing) {
+      lastLoc = loc;
+      $('lat').value = s.lat.toFixed(4);
+      $('lon').value = s.lon.toFixed(4);
+    }
+    $('loc-source').textContent = LOC_SOURCES[s.locSource] || '';
     if (s.timezoneCode) $('timezone').value = s.timezoneCode;
   }
 
@@ -785,6 +820,25 @@ const char APP_JS[] PROGMEM = R"JS(
       $('save-wifi-status').textContent = 'Saved';
       setTimeout(() => { $('save-wifi-status').textContent = ''; }, 2000);
     });
+  });
+
+  function postLocation(body, okText) {
+    fetch('/api/location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => {
+      $('save-location-status').textContent = r.ok ? okText : 'Invalid location';
+      setTimeout(() => { $('save-location-status').textContent = ''; }, 2000);
+    });
+  }
+
+  $('save-location').addEventListener('click', () => {
+    postLocation({ lat: parseFloat($('lat').value), lon: parseFloat($('lon').value) }, 'Saved');
+  });
+
+  $('auto-location').addEventListener('click', () => {
+    postLocation({ auto: true }, 'Looking up...');
   });
 
   $('timezone').addEventListener('change', (e) => {

@@ -146,7 +146,7 @@ static float extraterrestrialRad(float latDeg, int doy) {
 static float hargreavesET0(int doy, float meanF, float rangeF) {
   const float meanC = (meanF - 32.0f) / 1.8f;
   const float rangeC = rangeF / 1.8f;
-  return 0.0023f * 0.408f * extraterrestrialRad(LATITUDE_DEG, doy) * (meanC + 17.8f) * sqrtf(rangeC);
+  return 0.0023f * 0.408f * extraterrestrialRad(siteLat, doy) * (meanC + 17.8f) * sqrtf(rangeC);
 }
 
 static int dayOfYear(time_t t) {
@@ -269,8 +269,8 @@ void controlRelays() {
   // and we haven't already run today.
   bool inWindow = (nowMins >= schedMins) && (nowMins < schedMins + CATCHUP_MINUTES);
   if (todayActive && inWindow && dayKey != lastAutoRunDayKey && state.runCycle == false) {  // trigger start of cycle
-    lastAutoRunDayKey = dayKey;
-    startCycle();
+    lastAutoRunDayKey = dayKey;  // set first: a rain-skipped day isn't retried
+    if (!recentRainSkip()) startCycle();
   }
 
   if (state.runCycle == true) {  // run watering cycle if is time

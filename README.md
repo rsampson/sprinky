@@ -112,8 +112,20 @@ Once connected, the web dashboard has three tabs:
   [Seasonal schedule profiles](#seasonal-schedule-profiles) below).
 - **Setup** — WiFi credentials, time zone selection (US zones plus common
   world zones — UK/GMT, Central European, Moscow, Australia Eastern,
-  Brazil, South Africa, Gulf/Dubai, India, China, Japan), a link to the
-  firmware update page, and a reboot button.
+  Brazil, South Africa, Gulf/Dubai, India, China, Japan), the site
+  **location** (see below), a link to the firmware update page, and a
+  reboot button.
+
+**Location.** Sprinky needs its latitude and longitude for temperature
+scaling and to pick the right season dates. There's nothing to set up:
+after each boot it looks up an approximate location (usually your city)
+from your internet connection, using the free [ip-api.com](https://ip-api.com)
+service. The Location card on the Setup tab shows the result. If it's
+wrong — some internet providers report a city far away — type your own
+latitude and longitude (decimal degrees, north and east positive; any map
+app will show them) and press **Save**. Values you enter are kept until you
+press **Use automatic location**. If the lookup fails, Sprinky uses the
+last location it found, or the defaults in `config.h`.
 
 <p align="center">
   <img src="images/valve_page.png" alt="Valves tab of the Sprinky dashboard" width="60%">
@@ -121,7 +133,7 @@ Once connected, the web dashboard has three tabs:
 
 
 Changes you make (valve names, run times, schedule, WiFi credentials,
-time zone) are saved to the device's flash storage and survive power
+time zone, location) are saved to the device's flash storage and survive power
 loss and reboots.
 
 ## Scheduling
@@ -157,7 +169,7 @@ once per season and switch between them instead of re-entering everything.
 - **Automatic switching:** Sprinky switches to the matching profile on
   Mar 1 (Spring), Jun 1 (Summer), Sep 1 (Fall) and Dec 1 (Winter), once
   its clock has synced over the network. The seasons are flipped for the
-  southern hemisphere (a negative `LATITUDE_DEG` in `config.h`). It never
+  southern hemisphere (a negative latitude on the Setup tab). It never
   switches in the middle of a watering cycle.
 - **Manual override:** selecting a season in the dropdown immediately
   loads that profile's saved schedule and makes it the active one. A
@@ -206,6 +218,27 @@ never stops or lengthens a watering cycle. The Status tab shows the
 temperature in either Fahrenheit or Celsius — use the °F / °C button on
 that card to switch.
 
+### Rain skip
+
+When a scheduled run is due, Sprinky asks Open-Meteo how much rain fell at
+your location and skips that day's run if any of these is met:
+
+| Rain in the last… | Skip if at least |
+|---|---|
+| 24 hours (including now) | 2.5 mm (0.1") |
+| 48 hours | 13 mm (0.5") |
+| 72 hours | 25 mm (1") |
+
+So light rain skips one day and a real soaking skips up to three. The
+Status tab logs a `Rain: …` line with the totals each time. The amounts
+are in `RAIN_SKIP[]` in `config.h`: raise them for sandy soil, lower them
+for clay. Rain skip is always on, works whether or not temperature scaling
+is on, and never blocks **Run Watering Sequence Now**. If Open-Meteo can't
+be reached, Sprinky waters as normal. Open-Meteo's rainfall is modeled for
+a 1–10 km area, not measured in your yard, so a very local shower can be
+missed. It's only checked when the run starts: rain that begins during a
+run doesn't stop it.
+
 ### Recommended: set up with scaling off first
 
 Temperature scaling is **off** by default, so a new installation waters
@@ -237,7 +270,8 @@ All hardware-specific settings live in `config.h`:
 | `relay[]` | **The important one.** GPIO pin number for each relay/valve, in order. Must match your specific board's wiring. |
 | `RELAY_ACTIVE` / `RELAY_INACTIVE` | Some relay boards are active-low (a `LOW` signal turns the relay on) and some are active-high. If your valves come on backwards from what you'd expect, swap these. |
 | `DS18B20` | Define this to include DS18B20 sensor support (on `TEMP_PIN`). The A0 diode fallback is always included. If neither sensor is present, readings default to 70 °F. |
-| `LATITUDE_DEG` | Your latitude (north positive, south negative). Used for the sun-strength part of temperature scaling, and to flip the season dates in the southern hemisphere. |
+| `LATITUDE_DEG` / `LONGITUDE_DEG` | Fallback location, used only until the automatic lookup succeeds or if you never enter one on the Setup tab. Normally no need to change. |
+| `RAIN_SKIP[]` | Rain-skip thresholds: rain amount (mm) over the last 24/48/72 hours that skips a scheduled run (see [Rain skip](#rain-skip)). |
 | `ET_REFERENCE[]` | A typical day for each season profile (day of year, average temperature, daily high–low gap), which the scaling compares against. The defaults are rough Southern California values; adjust them using the `ET0 …` lines logged on the Status tab. |
 | `DIODE_MV_AT_32F` / `DIODE_MV_AT_212F` | Diode calibration: its voltage in ice water and in boiling water. Recalibrate if you change the diode or its bias resistor/supply. |
 | `ESP8266_A0_FULL_SCALE_MV` | ESP8266 only: `1000` for a bare ESP-12E/F module, `3200` for NodeMCU/Wemos D1 boards with the on-board voltage divider. |
