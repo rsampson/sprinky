@@ -37,16 +37,18 @@ regardless of which board you used.
 </p>
 
 A temperature sensor is **optional**. Sprinky waters on schedule either
-way — a sensor just lets it shorten or extend run times based on the
-weather. See [Temperature-adjusted watering](#temperature-adjusted-watering)
-below for what to expect if you skip it.
+way, and when it's online it can adjust run times to the weather using
+free data from Open-Meteo, with no sensor at all. A sensor adds a backup
+for when that data isn't available. See
+[Temperature-adjusted watering](#temperature-adjusted-watering) below.
 
 ## What you need
 
 - An ESP32 or ESP8266 development board
 - A relay board (4 or 8 channel) to switch your sprinkler valves' solenoids
 - *(Optional)* A DS18B20 temperature sensor, or a silicon diode (e.g.
-  1N914) wired to the A0 analog input, for temperature-adjusted watering
+  1N914) wired to the A0 analog input, as a backup for temperature-adjusted
+  watering when online weather data isn't available
 - A USB cable to flash the firmware the first time (updates after that can
   go over WiFi — see [Firmware updates](#firmware-updates))
 
@@ -107,7 +109,9 @@ Once connected, the web dashboard has three tabs:
   is allowed to run on, and the daily start time (entered in 24-hour time,
   with a live 12-hour readout next to it so an evening schedule can't be
   mistaken for a morning one), plus a "Run Watering Sequence Now" button to
-  trigger the full schedule on demand. This tab also has a **Temperature
+  trigger the full schedule on demand and a "Cancel Watering Sequence"
+  button that stops a running sequence and closes every valve. This tab
+  also has a **Temperature
   scaling** on/off toggle and a **season profile** selector (see
   [Seasonal schedule profiles](#seasonal-schedule-profiles) below).
 - **Setup** — WiFi credentials, time zone selection (US zones plus common
@@ -184,49 +188,7 @@ copied into the **Summer** profile, so nothing is lost.
 
 The Temperature scaling toggle is a single global setting, not per-season.
 
-## Temperature-adjusted watering
-
-With **Temperature scaling** on, Sprinky adjusts every valve's run time to
-how much water the garden is actually losing — longer on hot, sunny days,
-shorter on cool or overcast ones.
-
-**How it works.** It uses the Hargreaves equation (FAO-56), the standard
-way irrigation controllers estimate evapotranspiration (ET₀, the water a
-lawn loses per day) when only temperature is measured. ET₀ is calculated
-from the last 24 hours of hourly readings (the average temperature and
-the gap between the day's high and low) plus the strength of the sun for
-your latitude and the date. The run-time factor is today's ET₀ divided by
-the ET₀ of a typical day for the active season (set in `config.h`). Your
-configured run times therefore mean "a typical day in this season", and
-the factor only corrects for today being hotter or cooler than that. The
-factor is limited to 0.25×–2.0×, and each run logs the values it used
-on the Status tab.
-
-**Temperature sensors.** Sprinky checks these on every reading, using the
-first one that works:
-
-1. a **DS18B20** digital sensor on `TEMP_PIN` (if `DS18B20` is defined in
-   `config.h`)
-2. a **silicon diode** on the A0 analog input, if its voltage is in the
-   range a forward-biased diode gives
-3. **Open-Meteo's** current air temperature for your location, if neither
-   sensor works and the controller is online (refreshed every 15 minutes).
-   This is the modeled temperature for the surrounding 1–10 km, not your
-   yard, so it's used for the display only: the sensor-based scaling
-   ignores it.
-4. a fixed **70 °F** if none of these is available
-
-The Status tab logs a `Temp source:` line whenever the source changes, so
-you can see if a sensor drops out. With no working sensor, or in the first
-12 hours after a reboot, sensor-based scaling simply stays at 100%. Each
-run logs which method set its run times: `[Open-Meteo Penman-Monteith]`,
-`[sensor Hargreaves]`, an `ET scaling: … using 100%` line saying why
-neither was used, or `Temperature scaling off`. A sensor failure
-never stops or lengthens a watering cycle. The Status tab shows the
-temperature in either Fahrenheit or Celsius — use the °F / °C button on
-that card to switch.
-
-### Rain skip
+## Rain skip
 
 When a scheduled run is due, Sprinky asks Open-Meteo how much rain fell at
 your location and skips that day's run if any of these is met:
@@ -247,6 +209,60 @@ a 1–10 km area, not measured in your yard, so a very local shower can be
 missed. It's only checked when the run starts: rain that begins during a
 run doesn't stop it.
 
+## Temperature-adjusted watering
+
+With **Temperature scaling** on, Sprinky adjusts every valve's run time to
+how much water the garden is actually losing — longer on hot, sunny days,
+shorter on cool or overcast ones.
+
+**How it works.** Sprinky estimates evapotranspiration (ET₀, the water a
+lawn loses per day). The run-time factor is that ET₀ divided by the ET₀
+of a typical day for the active season (set in `config.h`). Your
+configured run times therefore mean "a typical day in this season", and
+the factor only corrects for the weather being hotter, drier or cooler
+than that. The factor is limited to 0.25×–2.0×. Sprinky gets ET₀ in one
+of two ways:
+
+1. **Open-Meteo (preferred, no sensor needed).** Sprinky downloads
+   yesterday's ET₀ for your location from the free
+   [Open-Meteo](https://open-meteo.com) weather service, once after boot
+   and then each day from 1 AM. Open-Meteo calculates it with the FAO-56
+   Penman-Monteith equation from temperature, humidity, wind and sunshine.
+2. **Your temperature sensor (backup).** If yesterday's Open-Meteo value
+   isn't available, Sprinky uses the Hargreaves equation (FAO-56), the
+   standard estimate when only temperature is measured. It works from the
+   last 24 hours of hourly sensor readings (the average temperature and the
+   gap between the day's high and low) plus the strength of the sun for your
+   latitude and the date. It needs at least 12 hours of real sensor
+   readings. Open-Meteo temperatures don't count.
+
+If neither is available, the run uses your run times unchanged (100%).
+
+**Temperature sensors.** Sprinky checks these on every reading, using the
+first one that works:
+
+1. a **DS18B20** digital sensor on `TEMP_PIN` (if `DS18B20` is defined in
+   `config.h`)
+2. a **silicon diode** on the A0 analog input, if its voltage is in the
+   range a forward-biased diode gives
+3. **Open-Meteo's** current air temperature for your location, if neither
+   sensor works and the controller is online (refreshed every 15 minutes).
+   This is the modeled temperature for the surrounding 1–10 km, not your
+   yard, so it's used for the display only: the sensor-based scaling
+   ignores it.
+4. a fixed **70 °F** if none of these is available
+
+The Status tab logs a `Temp source:` line whenever the source changes, so
+you can see if a sensor drops out. With no working sensor, or in the first
+12 hours after a reboot, the sensor method isn't available, so a run
+without Open-Meteo data uses 100%. Each
+run logs which method set its run times: `[Open-Meteo Penman-Monteith]`,
+`[sensor Hargreaves]`, an `ET scaling: … using 100%` line saying why
+neither was used, or `Temperature scaling off`. A sensor failure
+never stops or lengthens a watering cycle. The Status tab shows the
+temperature in either Fahrenheit or Celsius — use the °F / °C button on
+that card to switch.
+
 ### Recommended: set up with scaling off first
 
 Temperature scaling is **off** by default, so a new installation waters
@@ -264,8 +280,9 @@ multiplied by that day's factor, which makes it hard to tell whether a
 dry or soggy zone needs a different run time or is just reacting to the
 weather.
 
-If you don't fit a temperature sensor at all, leave scaling off — run
-times are then used exactly as you set them.
+You don't need a temperature sensor for scaling. Without one, scaling
+works whenever Sprinky has yesterday's Open-Meteo ET₀; when it doesn't,
+runs use your run times exactly as set.
 
 ## Configuring your hardware
 
@@ -277,10 +294,10 @@ All hardware-specific settings live in `config.h`:
 | `RELAY8` | Define this if you have an 8-valve board; leave it commented out for a 4-valve board. |
 | `relay[]` | **The important one.** GPIO pin number for each relay/valve, in order. Must match your specific board's wiring. |
 | `RELAY_ACTIVE` / `RELAY_INACTIVE` | Some relay boards are active-low (a `LOW` signal turns the relay on) and some are active-high. If your valves come on backwards from what you'd expect, swap these. |
-| `DS18B20` | Define this to include DS18B20 sensor support (on `TEMP_PIN`). The A0 diode fallback is always included. If neither sensor is present, readings default to 70 °F. |
+| `DS18B20` | Define this to include DS18B20 sensor support (on `TEMP_PIN`). The A0 diode fallback is always included. If neither sensor works, the displayed temperature comes from Open-Meteo, or 70 °F when offline. |
 | `LATITUDE_DEG` / `LONGITUDE_DEG` | Fallback location, used only until the automatic lookup succeeds or if you never enter one on the Setup tab. Normally no need to change. |
 | `RAIN_SKIP[]` | Rain-skip thresholds: rain amount (mm) over the last 24/48/72 hours that skips a scheduled run (see [Rain skip](#rain-skip)). |
-| `ET_REFERENCE[]` | A typical day for each season profile (day of year, average temperature, daily high–low gap), which the scaling compares against. The defaults are rough Southern California values; adjust them using the `ET0 …` lines logged on the Status tab. |
+| `ET_REFERENCE[]` | A typical day for each season profile, which the scaling compares against: its ET₀ in mm/day (for the Open-Meteo method), plus day of year, average temperature and daily high–low gap (for the sensor method). The defaults are rough Southern California values; adjust them using the `ET0 …` lines logged on the Status tab. |
 | `DIODE_MV_AT_32F` / `DIODE_MV_AT_212F` | Diode calibration: its voltage in ice water and in boiling water. Recalibrate if you change the diode or its bias resistor/supply. |
 | `ESP8266_A0_FULL_SCALE_MV` | ESP8266 only: `1000` for a bare ESP-12E/F module, `3200` for NodeMCU/Wemos D1 boards with the on-board voltage divider. |
 
