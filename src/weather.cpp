@@ -21,6 +21,18 @@ static bool attempted = false;  // first attempt after boot ignores the 01:00 / 
 
 static const unsigned long RETRY_MS = 3600000UL;
 
+// Open-Meteo current air temperature, getTempF()'s fallback when no sensor
+// works. Fetched only while that fallback is being asked for.
+static float cachedTempF = 0;
+static unsigned long tempFetchedMs = 0;
+static bool haveTemp = false;
+static unsigned long tempAttemptMs = 0;
+static bool tempAttempted = false;
+static unsigned long tempWantedMs = 0;
+static bool tempWanted = false;
+static const unsigned long TEMP_REFRESH_MS = 900000UL;  // Open-Meteo updates "current" every 15 min
+static const unsigned long TEMP_MAX_AGE_MS = 3600000UL;
+
 // Site location and where it came from. Persisted as "locSrc" (+ "lat"/"lon"
 // unless LOC_DEFAULT) so a failed lookup after a reboot keeps the last result.
 enum : uint8_t { LOC_DEFAULT = 0, LOC_AUTO = 1, LOC_MANUAL = 2 };
@@ -265,7 +277,50 @@ bool recentRainSkip() {
 #endif
 }
 
+bool weatherTempF(float &f) {
+  tempWanted = true;
+  tempWantedMs = millis();
+  if (!haveTemp || millis() - tempFetchedMs > TEMP_MAX_AGE_MS) return false;
+  f = cachedTempF;
+  return true;
+}
+
+static void fetchCurrentTemp() {
+  tempAttempted = true;
+  tempAttemptMs = millis();
+  String url = "http://api.open-meteo.com/v1/forecast?latitude=" + String(siteLat, 4) +
+               "&longitude=" + String(siteLon, 4) +
+               "&current=temperature_2m&temperature_unit=fahrenheit";
+  String body;
+  const int code = httpGet(url, body);
+  if (code != HTTP_CODE_OK) {
+    webPrint("Weather: temp fetch failed (HTTP %d)\n", code);
+    return;
+  }
+  StaticJsonDocument<64> filter;
+  filter["current"]["temperature_2m"] = true;
+  StaticJsonDocument<96> doc;  // two objects + the copied key strings
+  if (deserializeJson(doc, body, DeserializationOption::Filter(filter)) ||
+      !doc["current"]["temperature_2m"].is<float>()) {
+    webPrint("Weather: temp fetch failed (json)\n");
+    return;
+  }
+  const float f = doc["current"]["temperature_2m"];
+  if (!isfinite(f) || f < -40.0f || f > 150.0f) {
+    webPrint("Weather: temp fetch failed (range)\n");
+    return;
+  }
+  cachedTempF = f;
+  tempFetchedMs = millis();
+  haveTemp = true;
+}
+
 // Unsigned subtraction is millis()-rollover safe.
+static bool tempDue() {
+  if (!tempWanted || millis() - tempWantedMs > 60000UL) return false;  // a sensor works again
+  return !tempAttempted || millis() - tempAttemptMs >= TEMP_REFRESH_MS;
+}
+
 static bool etDue(time_t t) {
   if (haveYesterday(t)) return false;
   // After the boot attempt: wait until 01:00 (yesterday's value has settled),
@@ -282,8 +337,8 @@ void updateWeather() {
   applyPendingLocation();
   if (WiFi.status() != WL_CONNECTED || ap_mode) return;
   const time_t t = now();
-  if (year(t) < 2024) return;  // clock not NTP-synced yet
-  if (!geoDue() && !etDue(t)) return;
+  const bool synced = year(t) >= 2024;  // ET0 needs the date; the rest doesn't
+  if (!tempDue() && !geoDue() && !(synced && etDue(t))) return;
   if (state.runCycle || anyValveOpen()) return;
 
 #if defined(ESP32)
@@ -292,8 +347,9 @@ void updateWeather() {
   disableLoopWDT();
 #endif
   // HTTPClient yields, which feeds the ESP8266 watchdog.
-  if (geoDue()) lookupLocation();  // first, so ET0 is fetched for the new location
-  if (etDue(t)) {
+  if (geoDue()) lookupLocation();  // first, so weather is fetched for the new location
+  if (tempDue()) fetchCurrentTemp();
+  if (synced && etDue(t)) {
     attempted = true;
     lastAttemptMs = millis();
     fetchEt0();

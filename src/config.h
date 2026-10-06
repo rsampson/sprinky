@@ -54,7 +54,7 @@ constexpr float LONGITUDE_DEG = -117.0f;
 // lines logged on the Status page each run. The et0mm values are 2025
 // Open-Meteo monthly means at 33N 117W; replace them with your site's from
 // archive-api.open-meteo.com/v1/archive?...&daily=et0_fao_evapotranspiration
-// or tune them from the "ET0 ... [open-meteo]" log lines.
+// or tune them from the "ET0 ... [Open-Meteo Penman-Monteith]" log lines.
 struct EtReference {
   int dayOfYear;
   float meanF;

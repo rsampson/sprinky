@@ -4,6 +4,7 @@
 void updateWeather();          // once/second from loop(): fetch yesterday's ET0 when due
 bool weatherEt0(float &mm);    // true (and mm set) only if the cached value is for yesterday
 bool recentRainSkip();         // blocking: true if recent rain meets a RAIN_SKIP tier
+bool weatherTempF(float &f);   // Open-Meteo current air temp, if fetched in the last hour
 
 // Site location (degrees, north/east positive): entered on the Setup page, else
 // looked up from the public IP address, else LATITUDE_DEG/LONGITUDE_DEG.

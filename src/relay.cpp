@@ -156,6 +156,11 @@ static int dayOfYear(time_t t) {
   return cum[month(t) - 1] + day(t) + ((leap && month(t) > 2) ? 1 : 0);
 }
 
+// Bit i set = the i-th newest dayBuffer sample came from Open-Meteo, not a
+// sensor (both hold the last 24 hours). computeEtScale() won't run Hargreaves
+// on those.
+static uint32_t weatherSamples = 0;
+
 // Which ET0 source scaled the last cycle: "open-meteo", "sensor", "none"
 // (fell back to 100%) or "off" (scaling disabled). Reported in /api/status.
 const char *etSource = "none";
@@ -178,12 +183,17 @@ static float computeEtScale() {
   float mm;
   if (weatherEt0(mm)) {  // mm is range-checked and et0mm > 0, so the ratio is finite
     const float scale = clampScale(mm / ref.et0mm);
-    webPrint("ET0 %d.%dmm [open-meteo] (ref %d.%d) -> %d%%\n", (int)(mm * 10) / 10, (int)(mm * 10) % 10,
+    webPrint("ET0 %d.%dmm [Open-Meteo Penman-Monteith] (ref %d.%d) -> %d%%\n", (int)(mm * 10) / 10, (int)(mm * 10) % 10,
              (int)(ref.et0mm * 10) / 10, (int)(ref.et0mm * 10) % 10, (int)(scale * 100));
     etSource = "open-meteo";
     return scale;
   }
 
+  // Hargreaves is the sensor method: model temperatures don't count.
+  if (tempFromWeather || weatherSamples != 0) {
+    webPrint("ET scaling: temps from Open-Meteo, not a sensor, using 100%%\n");
+    return 1.0f;
+  }
   const auto n = dayBuffer.size();
   if (n < 12) {
     webPrint("ET scaling: only %d h of temps, using 100%%\n", (int)n);
@@ -213,7 +223,7 @@ static float computeEtScale() {
   scale = clampScale(scale);
 
   // integer tenths: avoids relying on %f support in webPrint's vsnprintf
-  webPrint("ET0 %d.%dmm [sensor] (ref %d.%d), Tmean %dF swing %dF -> %d%%\n",
+  webPrint("ET0 %d.%dmm [sensor Hargreaves] (ref %d.%d), Tmean %dF swing %dF -> %d%%\n",
            (int)(et0 * 10) / 10, (int)(et0 * 10) % 10, (int)(etRef * 10) / 10, (int)(etRef * 10) % 10,
            (int)meanF, (int)rangeF, (int)(scale * 100));
   etSource = "sensor";
@@ -244,6 +254,7 @@ void startCycle() {
   } else {
     state.temp_adjust = 1000;  // 1.0x: run times used as-is
     etSource = "off";
+    webPrint("Temperature scaling off: run times as set\n");
   }
 
   // Safety: force all valves off 5 min after the cycle should have ended.
@@ -315,6 +326,7 @@ void updateHourlyTempAverage(void) {
 
     // samples temp and computes the average of the last 24 hours
     dayBuffer.push(state.cur_temp);
+    weatherSamples = ((weatherSamples << 1) | (tempFromWeather ? 1 : 0)) & 0xFFFFFFUL;
 
     state.avg_temp = 0;
     // // the following ensures using the right type for the index variable

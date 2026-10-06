@@ -209,11 +209,19 @@ first one that works:
    `config.h`)
 2. a **silicon diode** on the A0 analog input, if its voltage is in the
    range a forward-biased diode gives
-3. a fixed **70 °F** if neither is present or believable
+3. **Open-Meteo's** current air temperature for your location, if neither
+   sensor works and the controller is online (refreshed every 15 minutes).
+   This is the modeled temperature for the surrounding 1–10 km, not your
+   yard, so it's used for the display only: the sensor-based scaling
+   ignores it.
+4. a fixed **70 °F** if none of these is available
 
 The Status tab logs a `Temp source:` line whenever the source changes, so
 you can see if a sensor drops out. With no working sensor, or in the first
-12 hours after a reboot, scaling simply stays at 100%. A sensor failure
+12 hours after a reboot, sensor-based scaling simply stays at 100%. Each
+run logs which method set its run times: `[Open-Meteo Penman-Monteith]`,
+`[sensor Hargreaves]`, an `ET scaling: … using 100%` line saying why
+neither was used, or `Temperature scaling off`. A sensor failure
 never stops or lengthens a watering cycle. The Status tab shows the
 temperature in either Fahrenheit or Celsius — use the °F / °C button on
 that card to switch.

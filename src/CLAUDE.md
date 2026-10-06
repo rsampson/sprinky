@@ -145,7 +145,9 @@ C-style Arduino code organized by concern into files that all share globals
 through `sprinky.h` (included nearly everywhere; declares the shared state
 struct and externs). No class hierarchy.
 
-- **`sprinky.cpp`** — `setup()` / `loop()`, temperature reading (`getTempF()`),
+- **`sprinky.cpp`** — `setup()` / `loop()`, temperature reading (`getTempF()`:
+  DS18B20 → A0 diode → Open-Meteo `weatherTempF()` → fixed 70 °F; sets
+  `tempFromWeather`),
   boot diagnostics, and the `SprinklerState state` definition.
   `loop()` each iteration: `handleWiFi()` (Wi-Fi state machine),
   `timeClient.update()` (NTP), `controlRelays()`, `ElegantOTA.loop()`, and —
@@ -168,14 +170,18 @@ struct and externs). No class hierarchy.
     `state.tempScaling` is on, `computeEtScale()` × 1000 (seconds→ms factor
     folded in). If `weatherEt0()` has yesterday's Open-Meteo Penman-Monteith
     ET₀, that is divided by the season's `ET_REFERENCE[curSeason].et0mm`
-    (logged `ET0 … [open-meteo]`). Otherwise it is the FAO-56 Hargreaves ET₀ of the last 24 hourly
+    (logged `ET0 … [Open-Meteo Penman-Monteith]`). Otherwise it is the FAO-56 Hargreaves ET₀ of the last 24 hourly
     `dayBuffer` samples (mean, max−min swing, today's day of year,
     `siteLat`) divided by ET₀ of the active season's typical day
     (`ET_REFERENCE[curSeason]` in `config.h`), clamped to
     `ET_SCALE_MIN`–`ET_SCALE_MAX`; it falls back to 1.0× with <12 samples or a
-    <2 °F swing (dead sensor), and logs the ET0 line (tagged `[sensor]`) to the
-    Status page; otherwise it's pinned to `1000` (1.0×, run times used exactly
-    as entered). The source used is kept in `etSource` (`"open-meteo"`,
+    <2 °F swing (dead sensor), and logs the ET0 line (tagged `[sensor Hargreaves]`) to the
+    Status page. Hargreaves never runs on Open-Meteo temperatures: if the
+    current reading or any of the 24 hourly samples came from Open-Meteo
+    (`tempFromWeather`, and the `weatherSamples` bitmask kept alongside
+    `dayBuffer`), it logs `ET scaling: temps from Open-Meteo…` and uses 1.0×.
+    With scaling off it's pinned to `1000` (1.0×, run times used exactly
+    as entered) and logs `Temperature scaling off: run times as set`. The source used is kept in `etSource` (`"open-meteo"`,
     `"sensor"`, `"none"` = fell back to 100%, `"off"`) for `/api/status`.
     Per-valve start times chain as `START1..START9` macro offsets from
     `state.start_time_ms`, each `state.runtime[i] * state.temp_adjust`.
@@ -242,6 +248,12 @@ struct and externs). No class hierarchy.
   `requestAutoLocation()`); `updateWeather()` applies it in `loop()`. Any move
   drops the cached ET0 and refetches at once. Flash is written only when the
   location or its source changes.
+
+  `weatherTempF()` is `getTempF()`'s third source: Open-Meteo `current`
+  `temperature_2m` (°F), cached and valid for 1 h. Each call marks the fallback
+  as wanted; `updateWeather()` fetches it (`tempDue()`) only if it was wanted in
+  the last minute and the last attempt is ≥ 15 min old, so a device with a
+  working sensor never requests it. Unlike ET0 it doesn't wait for NTP sync.
 
   `recentRainSkip()` is a **blocking**, on-demand request (hourly
   `precipitation`, `past_hours` = the last `RAIN_SKIP[]` tier, `forecast_hours=2`

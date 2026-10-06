@@ -107,10 +107,13 @@ static bool readDiode(float &tempF) {
   return true;
 }
 
+bool tempFromWeather = false;
+
 // Outside temperature, trying each source in turn on every call: DS18B20,
-// then the A0 diode, then a fixed 70F. Always returns a sane value, so a
-// failed or missing sensor can't disturb the watering cycle. Logs to the
-// Status page whenever the source in use changes.
+// then the A0 diode, then Open-Meteo's current air temperature (display only:
+// Hargreaves scaling ignores it, see tempFromWeather), then a fixed 70F.
+// Always returns a sane value, so a failed or missing sensor can't disturb
+// the watering cycle. Logs to the Status page whenever the source changes.
 int getTempF() {
   static const char *lastSource = nullptr;
   const char *source;
@@ -120,10 +123,12 @@ int getTempF() {
   else
 #endif
   if (readDiode(tempF)) source = "diode on A0";
+  else if (weatherTempF(tempF)) source = "Open-Meteo";
   else {
     tempF = 70.0f;
     source = "none (fixed 70F)";
   }
+  tempFromWeather = (strcmp(source, "Open-Meteo") == 0);
   if (source != lastSource) {
     webPrint("Temp source: %s\n", source);
     lastSource = source;
