@@ -14,6 +14,7 @@
 #include <Arduino.h>
 
 #include "sprinky.h"
+#include "weather.h"
 
 
 #if defined(ESP32)
@@ -312,6 +313,7 @@ void loop() {
     state.cur_temp = getTempF();         // sample sensor here (loop ctx); web handlers read the cache
     updateHourlyTempAverage();
     updateAutoSeason();                  // follow calendar seasons unless manually overridden
+    updateWeather();                     // fetch yesterday's Open-Meteo ET0 when due (never mid-cycle)
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // toggle the LED
     lastHousekeepingMs = millis();
   }

@@ -44,6 +44,7 @@ extern TimerType timer;
 extern CircularBuffer<float, 24> dayBuffer;
 extern CircularBuffer<char, (bufferSize - 4)> circBuff;
 extern char charBuf[bufferSize];
+extern const char *etSource;  // ET0 source of the last cycle, owned by relay.cpp
 extern uint8_t curSeason;  // active season profile (0=Summer..3=Spring), owned by web_server.cpp
 
 // Timezone variables and Days array are declared in time_manager.h
@@ -63,4 +64,5 @@ void allOff();
 void webPrint(const char *format, ...);
 bool shutOff(void *);
 void valveWatchdog();
+bool anyValveOpen();
 // Time utility functions are declared in time_manager.h
