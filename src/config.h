@@ -21,12 +21,14 @@ static constexpr uint8_t NUM_RELAYS = sizeof(relay) / sizeof(relay[0]) ;
 #define DS18B20  // compile in DS18B20 support; the A0 diode is always the fallback
 
 // --- Silicon-diode temperature sensor on A0 (fallback when no DS18B20) ---
-// Diode forward voltage at the A0 pin, calibrated in ice water and boiling
-// water (1N914 biased at ~0.44 mA through 10k). Working in millivolts keeps
-// one calibration valid on both ESP8266 and ESP32. Re-calibrate if the bias
-// resistor or supply changes (e.g. 10k from 3.3V instead of 5V drops Vf ~12mV).
-constexpr float DIODE_MV_AT_32F = 625.0f;
-constexpr float DIODE_MV_AT_212F = 393.0f;
+// Diode forward voltage at the A0 pin (1N914 biased at ~0.44 mA through 10k).
+// Working in millivolts keeps one calibration valid on both ESP8266 and ESP32.
+// Re-calibrate if the bias resistor or supply changes (e.g. 10k from 3.3V
+// instead of 5V drops Vf ~12mV). These are the original ice/boiling-water
+// points (625/393) shifted +17mV so the test unit reads 78F when it is 78F
+// (it read 65F); a single-point fix, accurate near 78F only.
+constexpr float DIODE_MV_AT_32F = 642.0f;
+constexpr float DIODE_MV_AT_212F = 410.0f;
 // A reading outside this window doesn't look like a forward-biased silicon
 // diode (missing, open, shorted), so the reading defaults to 70F. Spans about
 // -40F..160F on the calibration above.
