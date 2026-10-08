@@ -37,25 +37,6 @@ code changes.
 
 ## Project layout
 
-This is a **PlatformIO** project — there is **no `.ino` sketch**. The firmware
-is the `.cpp`/`.h` files, and (because PlatformIO's default `src_dir` is `src/`)
-they live in `src/` alongside `config.h`, `LICENSE`, and this file
-(`README.md` lives at the project root, not in `src/`):
-
-```
-platformio.ini          project + env + dependency definitions
-src/
-  sprinky.cpp / .h       setup()/loop(), getTempF(), boot diagnostics, shared state
-  config.h               compile-time device/hardware configuration
-  relay.cpp              valve control + watering-schedule state machine
-  wifi_manager.cpp / .h  Wi-Fi connect/reconnect state machine, AP fallback
-  time_manager.cpp / .h  NTP client, all Timezone/DST rule definitions
-  weather.cpp / .h       daily Open-Meteo ET0 fetch + RAM cache, site location
-  web_server.cpp / .h    the AsyncWebServer instance + all routes + persistence
-  web_assets.cpp / .h    the dashboard (INDEX_HTML / STYLE_CSS / APP_JS PROGMEM)
-  debug.cpp              webPrint() logging to Serial + a circular buffer
-```
-
 `src/build/` is stale `arduino-cli` output from before the PlatformIO
 conversion; it's gitignored and unused. Ignore it.
 
@@ -110,7 +91,7 @@ check for those first if a build breaks on a library it shouldn't.
 Almost all per-device and per-hardware variation is compile-time:
 
 - **`HOSTNAME`** — device hostname, mDNS name, and AP-mode SSID. Unique per
-  physical controller (currently `"sprinky2"`).
+  physical controller (currently `"sprinky"`).
 - **`RELAY8`** — define for 8-relay boards, leave commented for 4-relay. Gates
   the `relay[]` pin map length (hence `NUM_RELAYS`, computed as
   `sizeof(relay)/sizeof(relay[0])`) and the extra watering-cycle stages in
@@ -120,11 +101,9 @@ Almost all per-device and per-hardware variation is compile-time:
 - **`ON` / `OFF`** — relay active level (`HIGH`/`LOW`); some boards are
   active-low.
 - **`DS18B20`** — define to read outside temp from a DS18B20 on `TEMP_PIN`
-  (GPIO21 on ESP32, `D1` on ESP8266); leave undefined to read an analog diode on
-  `A0`. Currently **defined** in this checkout. Both paths fall back to a fixed
-  ~70°F when no sensor is detected: the DS18B20 path checks
-  `sensors.getDeviceCount()`, the analog path treats a raw ADC reading < 100 as
-  a floating/disconnected pin.
+  (GPIO21 on ESP32, `D1` on ESP8266). The A0 diode is always the next source,
+  used when its millivolt reading is inside the `DIODE_MV_MIN`/`MAX` window;
+  then Open-Meteo, then a fixed 70°F (see `getTempF()`).
 - **`LATITUDE_DEG` / `LONGITUDE_DEG`** — fallback site location only; the live
   one is `siteLat`/`siteLon` (see `weather.cpp`).
 - **`RAIN_SKIP[]`** — `{hours, mm}` rain-skip tiers (24 h 2.5 mm, 48 h 13 mm,
@@ -280,33 +259,6 @@ struct and externs). No class hierarchy.
   circular buffer) and `fetchDebugText()`, which drains the buffer into
   `charBuf`; the `/api/status` handler calls it each request to include the log
   tail.
-
-### Web API
-
-`GET /api/status` (polled every 1 s) returns: `hostname`, `time`, `date`, `timezone`,
-`timezoneCode`, `tempF`, `avgTempF`, `rssi`, `freeHeap`, `maxBlock` (bytes; largest
-allocatable block), `lastRunMinutes`, `disabled`,
-`tempScaling`, `etSource`, `runHour`, `runMinute`, `activeDays`, `season`, `ssid`,
-`apMode`, `lat`, `lon`, `locSource` (`"manual"`/`"auto"`/`"default"`), `log`,
-and a `valves[]` array (`name`, `runtime`, `on`).
-
-POST actions (JSON body unless noted), each mirroring what an old ESPUI
-callback did — same `Preferences` keys, same `relayOn`/`shutOff`/`state` calls,
-just over HTTP:
-
-| Route | Body | Effect |
-|---|---|---|
-| `/api/valve/{n}` | `{"on":bool}` | Manually open/close valve n; auto-off after 60 s |
-| `/api/watering` | `{"disable":bool}` | Master watering enable/disable (`disable` key) |
-| `/api/tempscaling` | `{"enabled":bool}` | Toggle temperature run-time scaling (`tempScale` key) |
-| `/api/run` | *(none)* | Start the full watering sequence now, ignoring day/time |
-| `/api/schedule` | `{hour, minute, activeDays, valves:[{name,runtime}], season?}` | Save hour/minute/days/valve names+times to the current (or given) season |
-| `/api/season` | `{"season":0-3}` | Switch active season profile: load its stored schedule into `state` and apply immediately |
-| `/api/wifi` | `{ssid, pass}` | Store Wi-Fi credentials |
-| `/api/timezone` | `{"tz":"<code>"}` | Set timezone; re-syncs NTP |
-| `/api/location` | `{lat, lon}` or `{"auto":true}` | Enter the site location (±90/±180, else 400), or go back to the IP lookup |
-| `/api/stop` | *(none)* | Cancel the watering sequence: close all valves, end the cycle |
-| `/api/reboot` | *(none)* | Restart after ~0.5 s |
 
 ### Persistence (`Preferences`, NVS-backed, namespace `"Settings"`)
 
