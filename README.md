@@ -238,6 +238,19 @@ of two ways:
 
 If neither is available, the run uses your run times unchanged (100%).
 
+**About Penman-Monteith.** The FAO-56 Penman-Monteith equation is the
+reference method for ET₀, but it needs humidity, wind and solar radiation
+as well as temperature, which a single temperature sensor can't provide.
+Sprinky therefore doesn't calculate it on the controller: Open-Meteo
+calculates it from its weather model and Sprinky just downloads the
+resulting daily figure. It is used whenever yesterday's value is available
+(the controller is online, the clock has synced, and the fetch has
+succeeded), and it takes priority over the sensor even if a sensor is
+fitted. Hargreaves is only the fallback when that value is missing. The
+Penman-Monteith figure for the season's typical day is the `et0mm` value
+in `ET_REFERENCE[]` (see [Configuring your hardware](#configuring-your-hardware)), so the two
+methods each compare against their own reference.
+
 **Temperature sensors.** Sprinky checks these on every reading, using the
 first one that works:
 
