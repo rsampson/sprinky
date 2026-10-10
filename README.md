@@ -325,6 +325,91 @@ opening it back up over USB: the Setup tab has a firmware update link that
 uses [ElegantOTA](https://github.com/ayushsharma82/ElegantOTA) to accept a
 new `.bin` upload directly from the browser.
 
+## Home Assistant (monitoring)
+
+[Home Assistant](https://www.home-assistant.io/) can show Sprinky's status
+by reading the same JSON the dashboard uses (`/api/status`). It's
+read-only: Home Assistant can see what Sprinky is doing but can't open
+valves or change the schedule. No MQTT broker, add-on or reflash is needed.
+
+1. Copy the block below into your `configuration.yaml` (or a
+   [package](https://www.home-assistant.io/docs/configuration/packages/)
+   file).
+2. Replace `192.168.0.18` with your controller's IP address. Use an IP
+   address (give the controller a DHCP reservation in your router) rather
+   than `sprinky.local`: Home Assistant OS and Docker installs often can't
+   resolve `.local` names.
+3. Restart Home Assistant. The entities appear within a minute.
+
+```yaml
+rest:
+  - resource: http://192.168.0.18/api/status
+    scan_interval: 60
+    timeout: 10
+    sensor:
+      - name: "Sprinky temperature"
+        unique_id: sprinky_temperature
+        value_template: "{{ value_json.tempF }}"
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state_class: measurement
+      - name: "Sprinky 24h average temperature"
+        unique_id: sprinky_avg_temperature
+        value_template: "{{ value_json.avgTempF | round(1) }}"
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state_class: measurement
+      - name: "Sprinky WiFi signal"
+        unique_id: sprinky_wifi_signal
+        value_template: "{{ value_json.rssi }}"
+        unit_of_measurement: "dBm"
+        device_class: signal_strength
+        state_class: measurement
+      - name: "Sprinky last run"
+        unique_id: sprinky_last_run
+        value_template: "{{ value_json.lastRunMinutes }}"
+        unit_of_measurement: "min"
+        device_class: duration
+      - name: "Sprinky ET source"
+        unique_id: sprinky_et_source
+        value_template: "{{ value_json.etSource }}"
+      - name: "Sprinky season"
+        unique_id: sprinky_season
+        value_template: "{{ ['Summer', 'Fall', 'Winter', 'Spring'][value_json.season] }}"
+      - name: "Sprinky active valve"
+        unique_id: sprinky_active_valve
+        value_template: >-
+          {% set open = value_json.valves | selectattr('on') | map(attribute='name') | list %}
+          {{ open[0] if open else 'none' }}
+    binary_sensor:
+      - name: "Sprinky watering enabled"
+        unique_id: sprinky_watering_enabled
+        value_template: "{{ not value_json.disabled }}"
+      - name: "Sprinky temperature scaling"
+        unique_id: sprinky_temperature_scaling
+        value_template: "{{ value_json.tempScaling }}"
+      - name: "Sprinky running"
+        unique_id: sprinky_running
+        value_template: "{{ value_json.valves | selectattr('on') | list | count > 0 }}"
+        device_class: running
+```
+
+Notes:
+
+- Home Assistant converts the temperatures to °C if your system uses
+  metric units.
+- **ET source** shows how the last run's time was set: `open-meteo`,
+  `sensor`, `none` (ran at 100%) or `off` (scaling off). See
+  [Temperature-adjusted watering](#temperature-adjusted-watering).
+- Home Assistant checks every 60 seconds, so it can miss a valve that
+  runs for less than about a minute (a short valve test, for example).
+- **More than one controller:** copy the whole `- resource:` entry under
+  the same `rest:`, change the address, and give every `name` and
+  `unique_id` a different prefix (e.g. `sprinky1_`).
+- These are ordinary entities, so you can use them in automations. For
+  example, send a notification if **Sprinky watering enabled** has been off
+  for three days, so watering isn't left switched off by mistake.
+
 ## A note on reliability
 
 I've had a version of this running in my own garden for a couple of
