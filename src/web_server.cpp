@@ -100,6 +100,7 @@ static void handleStatus(AsyncWebServerRequest *request) {
     v["name"] = preferences.getString(key, defVal);
     v["runtime"] = state.runtime[i];
     v["on"] = valveIsOpen[i];
+    v["enabled"] = (state.valveEnabled >> i) & 1;
   }
 
   sendJson(request, doc);
@@ -250,8 +251,10 @@ static void handleSchedule(AsyncWebServerRequest *request, JsonVariant &json) {
   preferences.putUChar(key, state.activeDays);
 
   JsonArray valves = body["valves"].as<JsonArray>();
+  uint8_t enabled = state.valveEnabled;
   for (int i = 0; i < NUM_RELAYS && i < (int)valves.size(); i++) {
     JsonObject v = valves[i].as<JsonObject>();
+    if (v.containsKey("enabled")) enabled = (enabled & ~(1 << i)) | ((v["enabled"].as<bool>() ? 1 : 0) << i);
     const char *name = v["name"] | "";
     int runtime = v["runtime"] | (int)state.runtime[i];
     // Clamp to a sane range: an unvalidated negative value would wrap to a
@@ -270,6 +273,10 @@ static void handleSchedule(AsyncWebServerRequest *request, JsonVariant &json) {
     sprintf(base, "slide%d", i + 1);
     seasonKey(key, curSeason, base);
     preferences.putString(key, String(runtime));
+  }
+  if (enabled != state.valveEnabled) {
+    state.valveEnabled = enabled;
+    preferences.putUChar("valveEn", enabled);
   }
   webPrint("Saved %s schedule: start %02d:%02d, days 0x%02X\n",
            seasonName(curSeason), state.runHour, state.runMinute, state.activeDays);
@@ -449,6 +456,7 @@ void setUpWebServer() {
   if (curSeason >= NUM_SEASONS) curSeason = 0;
   seedSeasonFromLegacy();
   loadSeason(curSeason);
+  state.valveEnabled = preferences.getUChar("valveEn", 0xFF);  // global, not per-season; default all enabled
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send_P(200, "text/html", INDEX_HTML);

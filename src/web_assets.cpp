@@ -70,7 +70,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 
   <section id="tab-valves" class="tab">
     <div class="card wide">
-      <div class="card-label">🚰 Diagnostics — open a valve for one minute</div>
+      <div class="card-label">🚰 Diagnostics — tap a valve to turn it on or off (auto-off after one minute)</div>
       <div id="valve-buttons" class="valve-buttons"></div>
     </div>
 
@@ -378,6 +378,7 @@ pre#log {
   transition: box-shadow var(--transition-fast), transform var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 .valve-btn:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.valve-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; transform: none; }
 .valve-btn.active {
   background: var(--btn-primary-bg);
   color: var(--btn-primary-text);
@@ -443,6 +444,8 @@ pre#log {
   border-bottom: 1px solid var(--border);
 }
 .valve-row:last-child { border-bottom: none; }
+.valve-row.off .valve-name-wrap, .valve-row.off input[type="range"], .valve-row.off .runtime-val { opacity: 0.45; }
+.valve-row input.valve-en { width: 1.15rem; height: 1.15rem; margin: 0; flex: none; accent-color: var(--btn-primary-bg); cursor: pointer; }
 .valve-name-wrap { position: relative; display: inline-flex; align-items: center; }
 .valve-name-wrap::before {
   content: "\270E";  /* pencil: hints the field is editable */
@@ -576,7 +579,7 @@ const char APP_JS[] PROGMEM = R"JS(
   function updateValveTotal() {
     let total = 0;
     for (let i = 0; i < numValves; i++) {
-      total += parseFloat($('valve-slider-' + i).value);
+      if ($('valve-en-' + i).checked) total += parseFloat($('valve-slider-' + i).value);
     }
     $('valve-total').textContent = 'Total watering time: ' + fmtMinutes(total);
   }
@@ -593,12 +596,22 @@ const char APP_JS[] PROGMEM = R"JS(
       btn.className = 'valve-btn';
       btn.id = 'valve-btn-' + i;
       btn.textContent = v.name;
-      btn.addEventListener('click', () => toggleValve(i, !btn.classList.contains('active')));
+      btn.addEventListener('click', () => {
+        const on = !btn.classList.contains('active');
+        // Flip immediately rather than waiting for the next status poll, so a
+        // quick second tap sends "off" instead of re-sending "on".
+        document.querySelectorAll('.valve-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.toggle('active', on);
+        toggleValve(i, on);
+      });
       buttonsEl.appendChild(btn);
 
       const row = document.createElement('div');
       row.className = 'valve-row';
+      row.id = 'valve-row-' + i;
       row.innerHTML =
+        '<input type="checkbox" class="valve-en" id="valve-en-' + i + '" checked ' +
+          'aria-label="Enable valve ' + (i + 1) + '" title="Include this valve in watering (applied on Save)">' +
         '<span class="valve-name-wrap">' +
           '<input type="text" id="valve-name-' + i + '" value="" maxlength="14" autocomplete="off" ' +
           'placeholder="Valve ' + (i + 1) + ' name" ' +
@@ -608,6 +621,10 @@ const char APP_JS[] PROGMEM = R"JS(
         '<span class="runtime-val" id="valve-runtime-' + i + '"></span>';
       configEl.appendChild(row);
 
+      $('valve-en-' + i).addEventListener('change', (e) => {
+        row.classList.toggle('off', !e.target.checked);
+        updateValveTotal();
+      });
       $('valve-slider-' + i).addEventListener('input', (e) => {
         $('valve-runtime-' + i).textContent = fmtMinutes(parseFloat(e.target.value));
         updateValveTotal();
@@ -625,6 +642,8 @@ const char APP_JS[] PROGMEM = R"JS(
       $('valve-name-' + i).value = v.name;
       $('valve-slider-' + i).value = secToMin(v.runtime);
       $('valve-runtime-' + i).textContent = fmtMinutes(secToMin(v.runtime));
+      $('valve-en-' + i).checked = v.enabled;
+      $('valve-row-' + i).classList.toggle('off', !v.enabled);
     });
     updateValveTotal();
   }
@@ -711,7 +730,10 @@ const char APP_JS[] PROGMEM = R"JS(
 
     s.valves.forEach((v, i) => {
       const btn = $('valve-btn-' + i);
-      if (btn) btn.classList.toggle('active', v.on);
+      if (btn) {
+        btn.classList.toggle('active', v.on);
+        btn.disabled = !v.enabled && !v.on;  // saved state (checkbox applies on Save); never strand an open valve
+      }
     });
 
     $('wifi-ssid').placeholder = s.ssid || '';
@@ -788,6 +810,7 @@ const char APP_JS[] PROGMEM = R"JS(
       valves.push({
         name: $('valve-name-' + i).value,
         runtime: minToSec(parseFloat($('valve-slider-' + i).value)),
+        enabled: $('valve-en-' + i).checked,
       });
     }
     const body = {

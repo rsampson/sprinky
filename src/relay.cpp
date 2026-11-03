@@ -56,6 +56,15 @@ void valveWatchdog() {
   }
 }
 
+// Enabled-valve mask frozen at cycle start, so unticking a valve and saving
+// mid-cycle can't shift the window offsets under the valve that is open.
+static uint8_t cycleMask = 0xFF;
+
+// Run time (seconds) a valve gets in a watering cycle: 0 if it is disabled.
+static unsigned long cycleRuntime(int i) {
+  return (cycleMask & (1 << i)) ? state.runtime[i] : 0;
+}
+
 // turn a specific relay on, all others off
 // be aware that this function gets called multiple times, but should only run once per session
 void relayOn(int relay_index) {
@@ -65,7 +74,7 @@ void relayOn(int relay_index) {
 
   // Arm the valve watchdog before opening: a cycle valve may stay open for its
   // scaled run time, a manual test for MANUAL_VALVE_MS; plus a minute's slack.
-  valveMaxOpenMs = (state.runCycle ? state.runtime[relay_index] * state.temp_adjust : MANUAL_VALVE_MS) + 60000UL;
+  valveMaxOpenMs = (state.runCycle ? cycleRuntime(relay_index) * state.temp_adjust : MANUAL_VALVE_MS) + 60000UL;
   valveOpenedMs = millis();
 
   // "buzz" relay to clear jammed valve
@@ -99,14 +108,14 @@ void relayOn(int relay_index) {
 // one and every window comparison fails, silently ending the cycle with no
 // valve ever opened.
 #define OFFSET1 0UL
-#define OFFSET2 (OFFSET1 + state.runtime[0] * state.temp_adjust)
-#define OFFSET3 (OFFSET2 + state.runtime[1] * state.temp_adjust)
-#define OFFSET4 (OFFSET3 + state.runtime[2] * state.temp_adjust)
-#define OFFSET5 (OFFSET4 + state.runtime[3] * state.temp_adjust)
-#define OFFSET6 (OFFSET5 + state.runtime[4] * state.temp_adjust)
-#define OFFSET7 (OFFSET6 + state.runtime[5] * state.temp_adjust)
-#define OFFSET8 (OFFSET7 + state.runtime[6] * state.temp_adjust)
-#define OFFSET9 (OFFSET8 + state.runtime[7] * state.temp_adjust)
+#define OFFSET2 (OFFSET1 + cycleRuntime(0) * state.temp_adjust)
+#define OFFSET3 (OFFSET2 + cycleRuntime(1) * state.temp_adjust)
+#define OFFSET4 (OFFSET3 + cycleRuntime(2) * state.temp_adjust)
+#define OFFSET5 (OFFSET4 + cycleRuntime(3) * state.temp_adjust)
+#define OFFSET6 (OFFSET5 + cycleRuntime(4) * state.temp_adjust)
+#define OFFSET7 (OFFSET6 + cycleRuntime(5) * state.temp_adjust)
+#define OFFSET8 (OFFSET7 + cycleRuntime(6) * state.temp_adjust)
+#define OFFSET9 (OFFSET8 + cycleRuntime(7) * state.temp_adjust)
 
 // Calendar-day key (YYYYMMDD) of the last automatic cycle start, so a scheduled
 // run fires at most once per day; it self-clears when the date rolls over.
@@ -244,6 +253,11 @@ static bool cycleTimeout(void*) {
 // always gets a fresh scaling factor instead of reusing whatever a prior
 // scheduled cycle last computed.
 void startCycle() {
+  if (state.valveEnabled == 0) {  // nothing to water; don't pretend a cycle ran
+    webPrint("No valves enabled: watering cycle not started\n");
+    return;
+  }
+  cycleMask = state.valveEnabled;
   allOff();
   timer.cancel();  // cancel any manual operations
   state.start_time_ms = millis();
@@ -259,7 +273,7 @@ void startCycle() {
 
   // Safety: force all valves off 5 min after the cycle should have ended.
   unsigned long cycleMs = 0;
-  for (int i = 0; i < NUM_RELAYS; i++) cycleMs += state.runtime[i] * state.temp_adjust;
+  for (int i = 0; i < NUM_RELAYS; i++) cycleMs += cycleRuntime(i) * state.temp_adjust;
   timer.in(cycleMs + 300000UL, cycleTimeout);
   state.runCycle = true;
 }

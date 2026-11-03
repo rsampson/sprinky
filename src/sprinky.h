@@ -33,6 +33,12 @@ struct SprinklerState {
   // Bitmask of days the watering sequence is allowed to run on.
   // Bit 0 = Sunday .. bit 6 = Saturday, matching TimeLib's weekday() (1-7, Sunday=1).
   uint8_t activeDays;
+
+  // Bitmask of valves the watering sequence may use (bit i = valve i+1).
+  // Global, not per-season. A cleared bit skips the valve in cycles
+  // (the mask is frozen when a cycle starts). The server still accepts a manual
+  // test of a disabled valve; only the dashboard greys its button.
+  uint8_t valveEnabled;
 };
 
 // --- Global Struct Instances ---
