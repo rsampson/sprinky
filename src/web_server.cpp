@@ -42,6 +42,11 @@ static const char *seasonName(uint8_t s) {
 // handleSchedule() and handleSeason() can call it (defined further below).
 static void loadSeason(uint8_t s);
 
+// The active season's valve names, kept in RAM so /api/status (polled every
+// second) doesn't read them from flash each time. Filled by loadSeason(),
+// updated by handleSchedule(). 14 characters, the dashboard's field limit.
+static char valveName[NUM_RELAYS][15];
+
 static void sendJson(AsyncWebServerRequest *request, JsonDocument &doc) {
   AsyncResponseStream *response = request->beginResponseStream("application/json");
   serializeJson(doc, *response);
@@ -61,6 +66,10 @@ static void handleStatus(AsyncWebServerRequest *request) {
   doc["date"] = dateBuf;
   doc["timezone"] = tzName();
   doc["timezoneCode"] = tzCode();
+  doc["clock"] = clockSource();
+#ifdef MASTER_VALVE_PIN
+  doc["master"] = masterIsOpen;  // absent without a master valve: the dashboard hides its indicator
+#endif
   doc["tempF"] = (int)state.cur_temp;
   doc["avgTempF"] = state.avg_temp;
   doc["rssi"] = WiFi.RSSI();
@@ -85,19 +94,13 @@ static void handleStatus(AsyncWebServerRequest *request) {
   doc["lon"] = siteLon;
   doc["locSource"] = siteLocSource();
 
-  fetchDebugText();
-  doc["log"] = charBuf;
+  // const char*: ArduinoJson stores the pointer, not a copy of the text.
+  doc["log"] = (const char *)logBuf;
 
   JsonArray valves = doc.createNestedArray("valves");
   for (int i = 0; i < NUM_RELAYS; i++) {
     JsonObject v = valves.createNestedObject();
-    char base[10];
-    sprintf(base, "name%d", i + 1);
-    char key[14];
-    seasonKey(key, curSeason, base);
-    char defVal[15];
-    sprintf(defVal, "valve %d", i + 1);
-    v["name"] = preferences.getString(key, defVal);
+    v["name"] = (const char *)valveName[i];
     v["runtime"] = state.runtime[i];
     v["on"] = valveIsOpen[i];
     v["enabled"] = (state.valveEnabled >> i) & 1;
@@ -268,7 +271,8 @@ static void handleSchedule(AsyncWebServerRequest *request, JsonVariant &json) {
     char base[10];
     sprintf(base, "name%d", i + 1);
     seasonKey(key, curSeason, base);
-    preferences.putString(key, name);
+    strlcpy(valveName[i], name, sizeof(valveName[i]));
+    preferences.putString(key, valveName[i]);
 
     sprintf(base, "slide%d", i + 1);
     seasonKey(key, curSeason, base);
@@ -342,6 +346,18 @@ static void handleTimezone(AsyncWebServerRequest *request, JsonVariant &json) {
   request->send(200, "text/plain", "ok");
 }
 
+// {"epoch": <UTC seconds>} from a browser with the dashboard open, sent while
+// the clock isn't on NTP. Applied by clockService() in loop(), and ignored
+// once NTP time is available.
+static void handleTime(AsyncWebServerRequest *request, JsonVariant &json) {
+  JsonObject body = json.as<JsonObject>();
+  if (!requestBrowserTime(body["epoch"] | 0UL)) {
+    request->send(400, "text/plain", "invalid time");
+    return;
+  }
+  request->send(200, "text/plain", "ok");
+}
+
 static void handleReboot(AsyncWebServerRequest *request) {
   request->send(200, "text/plain", "rebooting");
   pendingReboot = true;  // processWebCommands() restarts after ~500ms
@@ -376,6 +392,12 @@ static void loadSeason(uint8_t s) {
     if (runtime < 0) runtime = 0;
     if (runtime > 3600) runtime = 3600;  // 60 min/valve cap
     state.runtime[i] = (unsigned long)runtime;
+
+    sprintf(base, "name%d", i + 1);
+    seasonKey(key, s, base);
+    char defVal[15];
+    sprintf(defVal, "valve %d", i + 1);
+    strlcpy(valveName[i], preferences.getString(key, defVal).c_str(), sizeof(valveName[i]));
   }
 }
 
@@ -479,6 +501,7 @@ void setUpWebServer() {
   server.addHandler(jsonHandler("/api/season", handleSeason));
   server.addHandler(jsonHandler("/api/wifi", handleWifi));
   server.addHandler(jsonHandler("/api/timezone", handleTimezone));
+  server.addHandler(jsonHandler("/api/time", handleTime));
   server.addHandler(jsonHandler("/api/location", handleLocation));
 
   for (int i = 0; i < NUM_RELAYS; i++) {

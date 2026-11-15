@@ -31,6 +31,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
         <div id="time" class="card-value">--:--:--</div>
         <div id="date" class="card-sub"></div>
         <div id="tz" class="card-sub"></div>
+        <div id="clock-src" class="card-sub"></div>
       </div>
       <div class="card">
         <div class="card-label">🌡️ Outside Temp</div>
@@ -72,6 +73,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
     <div class="card wide">
       <div class="card-label">🚰 Diagnostics — tap a valve to turn it on or off (auto-off after one minute)</div>
       <div id="valve-buttons" class="valve-buttons"></div>
+      <div id="master-state" class="card-sub" hidden></div>
     </div>
 
     <div class="card wide">
@@ -523,6 +525,16 @@ const char APP_JS[] PROGMEM = R"JS(
     default: 'Default from config.h (automatic lookup not done yet).',
   };
 
+  // Where the device's clock came from (s.clock). While it isn't internet
+  // time, this page sends the browser's time once a minute (/api/time).
+  const CLOCK_SOURCES = {
+    ntp: '',
+    browser: 'Clock set from a browser (no internet time)',
+    restored: 'Clock restored after a restart: may be late',
+    unset: 'Clock not set: schedule paused',
+  };
+  let lastTimeSentMs = 0;
+
   const $ = (id) => document.getElementById(id);
 
   $('temp-unit').addEventListener('click', () => {
@@ -692,6 +704,17 @@ const char APP_JS[] PROGMEM = R"JS(
     $('time').textContent = s.time;
     $('date').textContent = s.date;
     $('tz').textContent = s.timezone;
+    $('clock-src').textContent = CLOCK_SOURCES[s.clock] || '';
+    if (s.clock && s.clock !== 'ntp' && Date.now() - lastTimeSentMs > 60000) {
+      lastTimeSentMs = Date.now();
+      fetch('/api/time', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ epoch: Math.floor(Date.now() / 1000) }),
+      });
+    }
+    $('master-state').hidden = s.master === undefined;
+    if (s.master !== undefined) $('master-state').textContent = 'Master valve: ' + (s.master ? 'OPEN' : 'closed');
     lastTempF = s.tempF;
     lastAvgTempF = s.avgTempF;
     renderTemp();

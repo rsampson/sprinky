@@ -10,12 +10,12 @@ constexpr const char *HOSTNAME = "sprinky";
 #define RELAY8  // comment this out if using a board with only 4 relays
 #ifdef RELAY8  // if using a board with 8 relays
 #if defined(ESP32)
-static const uint8_t  relay[] = { 32, 33, 25, 26, 27, 14, 12, 13 };
+static constexpr uint8_t relay[] = { 32, 33, 25, 26, 27, 14, 12, 13 };
 #else
-static const uint8_t  relay[] = { 16, 14, 12, 13, 15, 0, 4, 5 };
+static constexpr uint8_t relay[] = { 16, 14, 12, 13, 15, 0, 4, 5 };
 #endif
 #else  
-static const uint8_t  relay[] = { 16, 14, 12, 13 };
+static constexpr uint8_t relay[] = { 16, 14, 12, 13 };
 #endif
 
 static constexpr uint8_t NUM_RELAYS = sizeof(relay) / sizeof(relay[0]) ;
@@ -98,3 +98,35 @@ constexpr RainSkip RAIN_SKIP[] = {
 // relay contact / opens the valve). Swap these if your valves energize backwards.
 #define RELAY_ACTIVE HIGH
 #define RELAY_INACTIVE LOW
+
+// --- Master valve (optional) ---
+// A valve upstream of all the zone valves, on its own relay: it opens whenever
+// a zone valve is open and closes with it, so a zone valve that sticks open
+// can't flood on its own. Set this to a spare GPIO that drives the extra
+// relay; it must not be one of the relay[] pins. Driven at the same active
+// level as the zone relays (RELAY_ACTIVE).
+// #define MASTER_VALVE_PIN 4
+
+// With this also defined, the master pin puts out a ~500 Hz square wave
+// (instead of a steady level) while a valve is open, for the "dead-man"
+// charge-pump circuit in the README: the master relay then drops out within
+// about a second if the firmware stops running, whatever state the pin freezes
+// in. RELAY_ACTIVE doesn't apply to the pulsed output.
+// #define MASTER_VALVE_PULSED
+
+// --- Hard limits (safety) ---
+// Checked independently of the schedule and the run-time scaling, so a corrupt
+// run time or scale factor can't hold a valve open.
+// No valve stays open longer than this in one go. 2 h is the longest a normal
+// run can be (the 60 min slider maximum at ET_SCALE_MAX).
+constexpr unsigned long MAX_VALVE_SECONDS = 7200;
+// Total valve-open time allowed per calendar day, all zones together. Past
+// it, everything closes and nothing opens again until the next day (or a
+// reboot: the count is kept in RAM).
+constexpr unsigned long MAX_DAILY_SECONDS = 28800;  // 8 h
+
+// --- Missed-run catch-up ---
+// A scheduled run that couldn't start on time (power cut, reboot, the hour
+// skipped when daylight saving starts) still starts if the controller is
+// ready within this many minutes of the start time, on the same calendar day.
+constexpr int CATCHUP_MINUTES = 180;

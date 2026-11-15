@@ -111,6 +111,14 @@ Almost all per-device and per-hardware variation is compile-time:
 - **`ET_REFERENCE[]`** — per-season typical day: Hargreaves inputs
   (`dayOfYear`, `meanF`, `rangeF`) and `et0mm`, the Penman-Monteith ET₀
   (mm/day) reference for the Open-Meteo source.
+- **`MASTER_VALVE_PIN`** (commented out by default) — GPIO of an extra relay
+  for a master valve; must not be in `relay[]` (a `static_assert` in
+  `relay.cpp` enforces it, which is why `relay[]` is `constexpr`).
+  **`MASTER_VALVE_PULSED`** makes that pin a ~500 Hz square wave for the
+  dead-man charge-pump circuit in the README.
+- **`MAX_VALVE_SECONDS`** (7200) / **`MAX_DAILY_SECONDS`** (28800) — hard
+  limits enforced in `relay.cpp` independently of run times and scaling.
+- **`CATCHUP_MINUTES`** (180) — how late a missed scheduled run may start.
 - **`LED_BUILTIN`**, buffer-size constants — rarely touched.
 
 ESP32-vs-ESP8266 differences (temp-sensor pin, `Serial` debug macro, mDNS
@@ -137,15 +145,21 @@ struct and externs). No class hierarchy.
 - **`sprinky.h`** — `struct SprinklerState` (`disable`, `runCycle`,
   `tempScaling`, `runHour`, `runMinute`, `runtime[8]`, `start_time_ms`,
   `temp_adjust`, `cur_temp`, `avg_temp`, `lastRunMinutes`, `activeDays`),
-  `extern` globals (`preferences`, `timer`, `dayBuffer`, `circBuff`, `charBuf`),
+  `extern` globals (`preferences`, `timer`, `dayBuffer`, `logBuf`),
   and prototypes for most functions in the project.
 - **`config.h`** — see above. Included by `sprinky.h`.
 - **`relay.cpp`** — valve/relay hardware (`relayOn`, `allOff`, `relayConfig`)
   and the watering state machine:
   - `controlRelays()` — checks `state.activeDays` (bitmask, bit 0 = Sunday …
     bit 6 = Saturday, matching TimeLib `weekday()` which is 1-7 Sunday=1) to see
-    if today is enabled, then fires at `state.runHour:state.runMinute:00` if
-    `runCycle` is false. At cycle start it computes `state.temp_adjust`: if
+    if today is enabled, then fires once per calendar day when the time is in
+    `[start, start + CATCHUP_MINUTES)`, `clockIsSet()` and `runCycle` is false
+    (so a run missed through a reboot, power cut or the DST spring-forward hour
+    is caught up, same day only). The once-per-day latch `lastAutoRunDayKey`
+    is persisted (`lastRun`), so a reboot inside the window doesn't water
+    twice. `resetAutoRunLatch()` (start time changed on save) clears it only
+    if the new time is still ahead today; otherwise it sets it to today, so
+    saving a time that has already passed doesn't start a run. At cycle start it computes `state.temp_adjust`: if
     `state.tempScaling` is on, `computeEtScale()` × 1000 (seconds→ms factor
     folded in). If `weatherEt0()` has yesterday's Open-Meteo Penman-Monteith
     ET₀, that is divided by the season's `ET_REFERENCE[curSeason].et0mm`
@@ -173,6 +187,20 @@ struct and externs). No class hierarchy.
     it, all valves close and a `SAFETY:` line is logged. On ESP32,
     `enableLoopWDT()` resets the board if `loop()` hangs (`setup()` then
     closes all valves); the ESP8266 hardware watchdog does the same.
+  - **Hard limits**: `relayOn()` caps the watchdog limit at
+    `MAX_VALVE_SECONDS`. `valveWatchdog()` also adds up valve-open time
+    (`dailyOpenMs`, RAM only, zeroed by `controlRelays()` when the date
+    changes); at `MAX_DAILY_SECONDS` it closes everything, and `startCycle()`
+    / `relayOn()` refuse to open until the next day.
+  - **Master valve** (`MASTER_VALVE_PIN`): `masterIsOpen` is set by
+    `relayOn()` and cleared by `allOff()`; `relayOn()` uses `zonesOff()` so
+    the master stays open across a zone change. Steady mode writes the pin in
+    `masterWrite()`. Pulsed mode (`MASTER_VALVE_PULSED`) drives the pin only
+    from `masterValveService()`, called in `loop()` right after
+    `valveWatchdog()`: it must stay in `loop()` (never a hardware timer or
+    PWM), because the square wave has to stop when the loop stops. In pulsed
+    mode `loop()` also skips `timeClient.update()` while a valve is open (a
+    lost NTP reply blocks ~1 s, longer than the circuit's hold time).
   - **Only `loop()` touches the valves or `timer`.** The `/api/valve`, `/api/run`,
     `/api/watering` (disable) and `/api/reboot` handlers just post a command
     (`pendingCmd`, latest wins; `pendingReboot`) that `processWebCommands()`
@@ -192,10 +220,20 @@ struct and externs). No class hierarchy.
   (`DISCONNECTED → CONNECTING → CONNECTED`, periodic connectivity checks,
   hard-reset-and-retry on failure). Falls back to AP mode (`ap_mode` global) at
   `192.168.4.1` when stored credentials fail, so the dashboard can be used to
-  enter new ones. Owns `MDNS.begin(HOSTNAME)`.
+  enter new ones. While in AP mode with a saved SSID, `handleWiFi()` retries
+  it every `AP_RETRY_INTERVAL` (60 s; every 5 min after 10 failed tries) in
+  `WIFI_AP_STA` mode, skipping or abandoning the try while a client is on the
+  AP, and on success drops the AP and enters the
+  normal `CONNECTED` state (the router-slower-than-us-after-a-power-cut case). Owns `MDNS.begin(HOSTNAME)`.
 - **`time_manager.cpp` / `.h`** — the NTP client instance, every supported
   `Timezone`/DST rule, and conversion between the stored timezone string (in
-  `Preferences`) and the active `Timezone *tz`. Adding a zone means: a
+  `Preferences`) and the active `Timezone *tz`. Also the **clock source**
+  (`clockSource()`: `ntp` / `browser` / `restored` / `unset`): `initClock()`
+  in `setup()` starts from NTP or else the UTC time saved under `clock`;
+  `clockService()` (1 s housekeeping) adopts NTP as soon as it is valid,
+  applies a browser time posted to `/api/time` (queued by
+  `requestBrowserTime()`, ignored once on NTP), and saves the time hourly.
+  `controlRelays()` won't trigger a scheduled run while `!clockIsSet()`. Adding a zone means: a
   `TimeChangeRule` + `Timezone`, an `extern` in the header, and a branch in each
   of `tzName()`, `tzCode()`, `TZstringToPointer()` — plus an `<option>` in
   `web_assets.cpp`. The selector value string must be ≤15 chars (ESP32 NVS key
@@ -255,10 +293,12 @@ struct and externs). No class hierarchy.
   every 1 s and POSTs actions with `fetch()`. Valve rows, day-of-week toggles,
   and per-valve test buttons are all built client-side from `/api/status`, so
   the same HTML serves both 4- and 8-relay builds with no template flag.
-- **`debug.cpp`** — `webPrint()` (printf-style, goes to both `Serial` and a
-  circular buffer) and `fetchDebugText()`, which drains the buffer into
-  `charBuf`; the `/api/status` handler calls it each request to include the log
-  tail.
+- **`debug.cpp`** — `webPrint()` (printf-style, goes to both `Serial` and
+  `logBuf`, a NUL-terminated string that drops whole lines from the front
+  when full). `/api/status` sends `logBuf` in place as a `const char *`
+  (ArduinoJson stores the pointer, no copy). Valve names are likewise served
+  from the `valveName[]` RAM cache in `web_server.cpp` (filled by
+  `loadSeason()`, updated by `handleSchedule()`), not read from flash per poll.
 
 ### Persistence (`Preferences`, NVS-backed, namespace `"Settings"`)
 
@@ -266,7 +306,9 @@ struct and externs). No class hierarchy.
 
 **Global keys** (not per-season): `ssid`, `pass`, `timezone`, `disable`,
 `tempScale` (bool, default `false`), `locSrc` (`uint8`: 0 default, 1 auto,
-2 manual) with `lat`/`lon` (float; unused when `locSrc` is 0), `curSeason` (`uint8`, 0-3, default `0` =
+2 manual) with `lat`/`lon` (float; unused when `locSrc` is 0), `valveEn`
+(`uint8` enabled-valve mask), `lastRun` (`long`, YYYYMMDD of the last
+scheduled trigger, or -1), `clock` (`ulong`, UTC epoch saved hourly), `curSeason` (`uint8`, 0-3, default `0` =
 Summer), `calSeason` (`uint8`, 0-3, the last calendar season seen by
 `updateAutoSeason()`; absent until the first NTP-synced boot).
 
@@ -337,5 +379,11 @@ must re-populate them later (e.g. a season switch) has to call the shared
 
 - `src/build/` — stale pre-PlatformIO `arduino-cli` output, gitignored, ignore.
 - The jammed-valve "buzz" loop in `relayOn()` is commented out.
+- A cycle interrupted by a reboot is not resumed (the `lastRun` latch is
+  already set); only a run that never started is caught up.
+- The dead-man circuit in the README is simulated (ngspice), not built.
+- The AP-mode WiFi retry and the restored/browser clock paths were added
+  on 2026-11-10; check `git log`/the README for whether they have since been
+  exercised on hardware.
 - `tempScaling` is a single global, deliberately not per-season (it's a
   sensor-behavior switch, not a schedule value).

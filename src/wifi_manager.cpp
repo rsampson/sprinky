@@ -16,6 +16,12 @@ const unsigned long WIFI_CONNECT_TIMEOUT =
     15000; // 15 seconds connection timeout
 const unsigned long WIFI_CHECK_INTERVAL =
     10000; // Check connection integrity every 10 seconds
+const unsigned long AP_RETRY_INTERVAL =
+    60000; // in setup (AP) mode, try the saved network again this often
+const uint8_t AP_RETRY_FAST_TRIES =
+    10; // after this many failed tries (a router restart is over by then)...
+const unsigned long AP_RETRY_SLOW_INTERVAL =
+    300000; // ...try this often instead, to leave the access point's radio alone
 #if !defined(ESP32)
 const unsigned long MDNS_ANNOUNCE_INTERVAL =
     60000; // re-announce well inside the 120 s mDNS host-record TTL
@@ -126,13 +132,68 @@ void setupWiFi() {
 }
 
 void handleWiFi() {
+  unsigned long currentMillis = millis();
+
   if (ap_mode == true) {
-    // In AP mode, we don't need to manage connection states, so we can skip the
-    // state machine
+    // The setup access point came up because the saved network didn't answer
+    // at boot. That is also what happens when the router is still starting
+    // after a power cut, so keep trying the saved network: once a minute
+    // (every 5 minutes after AP_RETRY_FAST_TRIES failures), with the access
+    // point left up, and not while someone is connected to it (the attempt
+    // disturbs the access point's radio channel).
+    static unsigned long apRetryMs = 0;
+    static bool apJoining = false;
+    static uint8_t apFailedTries = 0;
+    if (stored_ssid.length() == 0 || stored_ssid == "SSID")
+      return; // no network has ever been saved
+    if (!apJoining) {
+      if (currentMillis - apRetryMs < (apFailedTries < AP_RETRY_FAST_TRIES
+                                           ? AP_RETRY_INTERVAL
+                                           : AP_RETRY_SLOW_INTERVAL))
+        return;
+      apRetryMs = currentMillis;
+      if (WiFi.softAPgetStationNum() > 0)
+        return;
+      WiFi.mode(WIFI_AP_STA);
+#if defined(ESP32)
+      WiFi.begin(stored_ssid.c_str(), stored_pass.c_str());
+#else
+      WiFi.begin(stored_ssid, stored_pass);
+#endif
+      apJoining = true;
+    } else if (WiFi.status() == WL_CONNECTED) {
+      apJoining = false;
+      apFailedTries = 0;
+      ap_mode = false;
+      WiFi.softAPdisconnect(true); // access point off, station stays connected
+      WiFi.mode(WIFI_STA);
+#if !defined(ESP32)
+      WiFi.setSleepMode(WIFI_NONE_SLEEP);
+#endif
+      WiFi.setAutoReconnect(false); // as in setupWiFi(): the state machine reconnects
+      WiFi.localIP().toString().toCharArray(ipStr, 16);
+      webPrint("WiFi joined %s after starting in setup mode, IP address = %s\n",
+               stored_ssid.c_str(), ipStr);
+      MDNS.end();
+      if (!MDNS.begin(HOSTNAME)) {
+        Serial.println("Error setting up MDNS responder!");
+      }
+      MDNS.addService("http", "tcp", 80);
+      wifiConnectedSince = currentMillis;
+      wifiStateTimer = currentMillis;
+      currentWifiState = WIFI_STATE_CONNECTED;
+    } else if (WiFi.softAPgetStationNum() > 0) {
+      apJoining = false; // someone joined the access point: give them the radio
+      WiFi.mode(WIFI_AP);
+    } else if (currentMillis - apRetryMs >= WIFI_CONNECT_TIMEOUT) {
+      apJoining = false;
+      if (apFailedTries < AP_RETRY_FAST_TRIES)
+        apFailedTries++;
+      WiFi.mode(WIFI_AP); // stop the station side until the next try
+    }
     return;
   }
 
-  unsigned long currentMillis = millis();
 
   switch (currentWifiState) {
   case WIFI_STATE_DISCONNECTED: {

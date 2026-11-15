@@ -104,6 +104,76 @@ time_t currentLocalTime(void) {
   return (serv_time);
 }
 
+// --- Clock source (see time_manager.h) ---
+enum : uint8_t { CLOCK_UNSET, CLOCK_RESTORED, CLOCK_BROWSER, CLOCK_NTP };
+static uint8_t clockSrc = CLOCK_UNSET;
+// Posted by the web handler (AsyncTCP task on ESP32), applied in loop().
+static volatile uint32_t pendingBrowserEpoch = 0;
+static unsigned long lastClockSaveMs = 0;
+static const unsigned long CLOCK_SAVE_MS = 3600000UL;
+
+const char *clockSource() {
+  static const char *names[] = { "unset", "restored", "browser", "ntp" };
+  return names[clockSrc];
+}
+
+bool clockIsSet() {
+  return clockSrc != CLOCK_UNSET;
+}
+
+// Saved as UTC, so changing the time zone doesn't invalidate it.
+static void saveClock() {
+  preferences.putULong("clock", (uint32_t)tz->toUTC(now()));
+  lastClockSaveMs = millis();
+}
+
+void initClock() {
+  time_t t = currentLocalTime();
+  if (t) {
+    setTime(t);
+    clockSrc = CLOCK_NTP;
+    saveClock();
+    return;
+  }
+  const uint32_t saved = preferences.getULong("clock", 0);
+  if (saved >= MIN_VALID_EPOCH) {
+    setTime(tz->toLocal(saved));
+    clockSrc = CLOCK_RESTORED;
+    lastClockSaveMs = millis();
+    webPrint("Clock: no internet time yet, using the last saved time (may be late)\n");
+  } else {
+    webPrint("Clock: not set, schedule paused until internet time or a browser sets it\n");
+  }
+}
+
+bool requestBrowserTime(uint32_t utcEpoch) {
+  if (utcEpoch < MIN_VALID_EPOCH) return false;
+  pendingBrowserEpoch = utcEpoch;
+  return true;
+}
+
+void clockService() {
+  if (clockSrc != CLOCK_NTP) {
+    const time_t t = currentLocalTime();
+    const uint32_t browser = pendingBrowserEpoch;
+    if (t) {  // NTP has answered: it wins from here on
+      setTime(t);
+      clockSrc = CLOCK_NTP;
+      webPrint("Clock: set from internet time\n");
+      saveClock();
+    } else if (browser) {
+      setTime(tz->toLocal(browser));
+      if (clockSrc != CLOCK_BROWSER) {
+        clockSrc = CLOCK_BROWSER;
+        webPrint("Clock: set from a browser (no internet time)\n");
+        saveClock();
+      }
+    }
+  }
+  pendingBrowserEpoch = 0;
+  if (clockSrc != CLOCK_UNSET && millis() - lastClockSaveMs >= CLOCK_SAVE_MS) saveClock();
+}
+
 String tzName() {
   if (tz == &ausET)
     return "Australia Eastern Time";

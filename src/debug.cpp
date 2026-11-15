@@ -5,8 +5,22 @@
 
 #define PRINT_BUFFER_SIZE 256
 
-// Create a circular buffer for debug output on web page
-CircularBuffer<char, (bufferSize - 4)> circBuff;
+// Recent debug output for the Status page: one NUL-terminated string, oldest
+// line first. The status handler sends it in place, with no second copy. The
+// last byte is never written, so a reader always finds a terminator.
+char logBuf[bufferSize];
+static size_t logLen = 0;
+
+// On ESP32 the web handlers (AsyncTCP task) and loop() both log, so the buffer
+// update needs a lock. On ESP8266 handlers never pre-empt loop().
+#if defined(ESP32)
+static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
+#define LOG_LOCK() portENTER_CRITICAL(&logMux)
+#define LOG_UNLOCK() portEXIT_CRITICAL(&logMux)
+#else
+#define LOG_LOCK()
+#define LOG_UNLOCK()
+#endif
 
 void webPrint(const char *format, ...) {
   char buffer[PRINT_BUFFER_SIZE];
@@ -26,32 +40,19 @@ void webPrint(const char *format, ...) {
   size_t bufferLen = strlen(buffer);
 
   Serial.print(buffer); // Direct debugging output
-  // Add formatted string to circular buffer
-  for (size_t i = 0; i < bufferLen; i++) {
-    // Make room before pushing: push() on a full buffer overwrites the oldest
-    // char and returns false, so pushing first would store this char twice.
-    if (circBuff.isFull()) {
-      // Remove old data until encountering '\n'
-      while (!circBuff.isEmpty() && circBuff.first() != '\n') {
-        circBuff.shift();
-      }
-      if (!circBuff.isEmpty()) {
-        circBuff.shift(); // Remove the trailing '\n'
-      }
-    }
-    circBuff.push(buffer[i]);
-  }
-}
 
-void fetchDebugText(void) { // displays the recent operations/ debug info
-  // read all of circular buffer into charBuff, it contains recent debug print
-  // out
-  int qty = circBuff.size();
-  int i = 0;
-  // unload ring buffer contents
-  for (i = 0; i < qty; i++) {
-    charBuf[i] = circBuff.shift();
-    circBuff.push(charBuf[i]);
+  // Make room by dropping whole lines from the front.
+  const size_t cap = bufferSize - 1;
+  LOG_LOCK();
+  while (logLen + bufferLen > cap) {
+    char *nl = (char *)memchr(logBuf, '\n', logLen);
+    size_t drop = nl ? (size_t)(nl - logBuf) + 1 : logLen;
+    memmove(logBuf, logBuf + drop, logLen - drop);
+    logLen -= drop;
+    logBuf[logLen] = 0;
   }
-  charBuf[i] = 0; // terminate string
+  memcpy(logBuf + logLen, buffer, bufferLen);
+  logLen += bufferLen;
+  logBuf[logLen] = 0;
+  LOG_UNLOCK();
 }

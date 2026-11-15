@@ -3,10 +3,39 @@
 #include <TimeLib.h>
 
 
+#ifdef MASTER_VALVE_PIN
+// The master valve needs a relay of its own: a pin that is also in relay[]
+// would be driven as a zone valve too.
+// (Recursive: the ESP32 toolchain's C++ level has no loops in constexpr.)
+constexpr bool masterPinIsZonePin(uint8_t i = 0) {
+  return i < NUM_RELAYS && (relay[i] == MASTER_VALVE_PIN || masterPinIsZonePin(i + 1));
+}
+static_assert(!masterPinIsZonePin(), "MASTER_VALVE_PIN must not be one of the relay[] pins");
+#endif
+
+// True while the master valve is being held open (always false without
+// MASTER_VALVE_PIN). Follows the zone valves: set by relayOn(), cleared by allOff().
+bool masterIsOpen = false;
+
+// Steady-level master output. In pulsed mode the pin is driven only by
+// masterValveService(), from masterIsOpen.
+static void masterWrite(bool open) {
+  masterIsOpen = open;
+#if defined(MASTER_VALVE_PIN) && !defined(MASTER_VALVE_PULSED)
+  digitalWrite(MASTER_VALVE_PIN, open ? RELAY_ACTIVE : RELAY_INACTIVE);
+#endif
+}
+
 void relayConfig() {
   for (int i = 0; i < NUM_RELAYS; i++) {
     pinMode(relay[i], OUTPUT);
   }
+#ifdef MASTER_VALVE_PIN
+  pinMode(MASTER_VALVE_PIN, OUTPUT);
+#ifdef MASTER_VALVE_PULSED
+  digitalWrite(MASTER_VALVE_PIN, LOW);
+#endif
+#endif
 }
 
 bool valveIsOpen[NUM_RELAYS];
@@ -18,12 +47,58 @@ static volatile unsigned long valveOpenedMs = 0;
 static volatile unsigned long valveMaxOpenMs = 0;
 static const unsigned long MANUAL_VALVE_MS = 60000;  // manual valve-test duration
 
-void allOff() {
+// Valve-open time used today against MAX_DAILY_SECONDS. Counted by
+// valveWatchdog(), zeroed by controlRelays() when the date changes.
+static unsigned long dailyOpenMs = 0;
+static bool dailyLimitReached() {
+  return dailyOpenMs >= MAX_DAILY_SECONDS * 1000UL;
+}
+
+static void zonesOff() {
   for (int i = 0; i < NUM_RELAYS; i++) {
     digitalWrite(relay[i], RELAY_INACTIVE);
     valveIsOpen[i] = false;
   }
 }
+
+void allOff() {
+  zonesOff();
+  masterWrite(false);
+}
+
+#if defined(MASTER_VALVE_PIN) && defined(MASTER_VALVE_PULSED)
+// Dead-man drive: toggle the master pin every millisecond while a valve is
+// legitimately open. Called from loop() right after valveWatchdog(), and
+// deliberately not from a hardware timer or PWM: the square wave has to stop
+// when loop() stops. Logs the rate actually achieved each time the master
+// closes (the charge pump needs roughly 40 Hz or more).
+void masterValveService() {
+  static bool level = false;
+  static unsigned long lastToggleUs = 0, toggles = 0, sinceMs = 0;
+  if (!masterIsOpen) {
+    if (level) {
+      level = false;
+      digitalWrite(MASTER_VALVE_PIN, LOW);
+    }
+    if (toggles) {
+      const unsigned long ms = millis() - sinceMs;
+      if (ms >= 1000) webPrint("Master valve pulse averaged %lu Hz\n", 
+                              (unsigned long)(toggles * 500ULL / ms)); // 64-bit: wraps after ~2.4 h in 32
+      toggles = 0;
+    }
+    return;
+  }
+  if (toggles == 0) sinceMs = millis();
+  if (micros() - lastToggleUs >= 1000UL) {
+    lastToggleUs = micros();
+    level = !level;
+    digitalWrite(MASTER_VALVE_PIN, level ? HIGH : LOW);
+    toggles++;
+  }
+}
+#else
+void masterValveService() {}
+#endif
 
 // Closes every valve and ends any watering cycle. Clearing runCycle matters:
 // otherwise controlRelays() reopens the current valve on the next loop().
@@ -46,8 +121,21 @@ bool anyValveOpen() {
 }
 
 void valveWatchdog() {
+  static unsigned long lastMs = 0;
+  const unsigned long nowMs = millis();
+  const unsigned long sinceLast = nowMs - lastMs;
+  lastMs = nowMs;
   if (!anyValveOpen()) return;
-  unsigned long openFor = millis() - valveOpenedMs;
+
+  dailyOpenMs += sinceLast;
+  if (dailyLimitReached()) {
+    shutOff(nullptr);
+    webPrint("SAFETY: valves open %lu min today, the daily limit -- all valves closed until tomorrow\n",
+             dailyOpenMs / 60000);
+    return;
+  }
+
+  unsigned long openFor = nowMs - valveOpenedMs;
   if (openFor > valveMaxOpenMs) {
     void* garb = nullptr;
     shutOff(garb);
@@ -70,11 +158,18 @@ static unsigned long cycleRuntime(int i) {
 void relayOn(int relay_index) {
 
   if (valveIsOpen[relay_index] == true) return;  // only turn on if off
-  allOff();
+  if (dailyLimitReached()) {  // a cycle never gets here (startCycle() refuses); a manual test does
+    webPrint("Daily watering limit reached: valve %d not opened\n", relay_index + 1);
+    return;
+  }
+  zonesOff();  // not allOff(): the master valve stays open across a zone change
 
   // Arm the valve watchdog before opening: a cycle valve may stay open for its
   // scaled run time, a manual test for MANUAL_VALVE_MS; plus a minute's slack.
-  valveMaxOpenMs = (state.runCycle ? cycleRuntime(relay_index) * state.temp_adjust : MANUAL_VALVE_MS) + 60000UL;
+  // Never more than the hard cap, whatever the run time and scale say.
+  unsigned long maxOpenMs = (state.runCycle ? cycleRuntime(relay_index) * state.temp_adjust : MANUAL_VALVE_MS) + 60000UL;
+  if (maxOpenMs > MAX_VALVE_SECONDS * 1000UL) maxOpenMs = MAX_VALVE_SECONDS * 1000UL;
+  valveMaxOpenMs = maxOpenMs;
   valveOpenedMs = millis();
 
   // "buzz" relay to clear jammed valve
@@ -90,8 +185,7 @@ void relayOn(int relay_index) {
     digitalWrite(relay[i], (i == relay_index) ? RELAY_ACTIVE : RELAY_INACTIVE);
     valveIsOpen[i] = (i == relay_index);
   }
-  // turn on last valve as a master safety valve
-  //digitalWrite(relay[NUM_RELAYS - 1], RELAY_ACTIVE);
+  masterWrite(true);
 
   time_t t = now();
   webPrint("Valve %1d on %s @ %02d:%02d:%02d %02d/%02d \n",  relay_index + 1, Days[weekday()], hour(t), minute(t), second(t),  month(t), day(t));
@@ -119,23 +213,29 @@ void relayOn(int relay_index) {
 
 // Calendar-day key (YYYYMMDD) of the last automatic cycle start, so a scheduled
 // run fires at most once per day; it self-clears when the date rolls over.
-// A latch plus a short catch-up window (below) replaces the old exact
-// second(t)==0 match, so a loop that runs a little late (e.g. briefly stalled
-// during a WiFi outage) still starts the cycle instead of skipping the
-// one-second trigger window entirely.
+// A latch plus the catch-up window (CATCHUP_MINUTES in config.h) replaces an
+// exact-time match, so a run that can't start on time (reboot, power cut, the
+// hour skipped when daylight saving starts) still starts when it can. The
+// window ends at midnight: a run is only caught up on its own calendar day.
+// Kept in flash ("lastRun") so a reboot inside the window doesn't water twice.
 static long lastAutoRunDayKey = -1;
+static bool latchLoaded = false;
 
-// Called when the schedule is saved, so a deliberately-changed run time can
-// still fire today instead of waiting for the once-per-day latch to clear
-// tomorrow.
-void resetAutoRunLatch() {
-  lastAutoRunDayKey = -1;
+static void setAutoRunLatch(long dayKey) {
+  lastAutoRunDayKey = dayKey;
+  latchLoaded = true;
+  preferences.putLong("lastRun", dayKey);
 }
 
-// How long after the scheduled minute we'll still start a missed cycle. Covers
-// a sluggish loop / short stall, but not "device was off for hours" (we don't
-// want it watering at noon because it booted after a morning slot).
-static const int CATCHUP_MINUTES = 5;
+// Called when the schedule is saved with a different start time. A new time
+// still ahead today is allowed to fire today. One that has already passed
+// waits for tomorrow: otherwise the catch-up window would start watering the
+// moment the schedule was saved.
+void resetAutoRunLatch() {
+  time_t t = now();
+  const bool stillAhead = state.runHour * 60 + state.runMinute > hour(t) * 60 + minute(t);
+  setAutoRunLatch(stillAhead ? -1 : (long)year(t) * 10000 + month(t) * 100 + day(t));
+}
 
 // --- Hargreaves ET0 (FAO-56 Irrigation & Drainage Paper 56, eqs. 21-25, 52) ---
 
@@ -257,6 +357,10 @@ void startCycle() {
     webPrint("No valves enabled: watering cycle not started\n");
     return;
   }
+  if (dailyLimitReached()) {
+    webPrint("Daily watering limit reached: watering cycle not started\n");
+    return;
+  }
   cycleMask = state.valveEnabled;
   allOff();
   timer.cancel();  // cancel any manual operations
@@ -280,12 +384,25 @@ void startCycle() {
 
 void controlRelays() {
 
+  time_t t = now();                                                                           // Store the current time atomically
+  long dayKey = (long)year(t) * 10000 + month(t) * 100 + day(t);  // unique per calendar day
+
+  // New day: start the MAX_DAILY_SECONDS count again.
+  static long dailyLimitDayKey = -1;
+  if (dayKey != dailyLimitDayKey) {
+    dailyLimitDayKey = dayKey;
+    dailyOpenMs = 0;
+  }
+
   if (state.wateringDisabled) {
     return;
   }
 
-  time_t t = now();                                                                           // Store the current time atomically
-  long dayKey = (long)year(t) * 10000 + month(t) * 100 + day(t);  // unique per calendar day
+  if (!latchLoaded) {
+    lastAutoRunDayKey = preferences.getLong("lastRun", -1);
+    latchLoaded = true;
+  }
+
   int nowMins = hour(t) * 60 + minute(t);
   int schedMins = state.runHour * 60 + state.runMinute;
   bool todayActive = state.activeDays & (1 << (weekday() - 1));  // weekday() is 1-7, Sunday=1
@@ -293,8 +410,9 @@ void controlRelays() {
   // Trigger if it's an active day, we're within [schedule, schedule+catchup),
   // and we haven't already run today.
   bool inWindow = (nowMins >= schedMins) && (nowMins < schedMins + CATCHUP_MINUTES);
-  if (todayActive && inWindow && dayKey != lastAutoRunDayKey && state.runCycle == false) {  // trigger start of cycle
-    lastAutoRunDayKey = dayKey;  // set first: a rain-skipped day isn't retried
+  // Not on a clock that has never been set (it would count from 1970).
+  if (clockIsSet() && todayActive && inWindow && dayKey != lastAutoRunDayKey && state.runCycle == false) {  // trigger start of cycle
+    setAutoRunLatch(dayKey);  // set first: a rain-skipped day isn't retried
     if (!recentRainSkip()) startCycle();
   }
 

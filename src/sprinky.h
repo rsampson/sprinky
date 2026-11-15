@@ -48,8 +48,7 @@ extern SprinklerState state;
 extern Preferences preferences;
 extern TimerType timer;
 extern CircularBuffer<float, 24> dayBuffer;
-extern CircularBuffer<char, (bufferSize - 4)> circBuff;
-extern char charBuf[bufferSize];
+extern char logBuf[bufferSize];  // recent webPrint() output, NUL-terminated (debug.cpp)
 extern const char *etSource;  // ET0 source of the last cycle, owned by relay.cpp
 extern bool tempFromWeather;  // last getTempF() reading came from Open-Meteo, not a sensor
 extern uint8_t curSeason;  // active season profile (0=Summer..3=Spring), owned by web_server.cpp
@@ -58,7 +57,6 @@ extern uint8_t curSeason;  // active season profile (0=Summer..3=Spring), owned 
 
 // --- Function Prototypes ---
 int getTempF();
-void fetchDebugText();
 
 // Relay Action Prototypes
 void updateHourlyTempAverage();
@@ -72,4 +70,6 @@ void webPrint(const char *format, ...);
 bool shutOff(void *);
 void valveWatchdog();
 bool anyValveOpen();
+void masterValveService();    // pulsed master-valve drive; a no-op unless MASTER_VALVE_PULSED
+extern bool masterIsOpen;     // master valve held open (always false without MASTER_VALVE_PIN)
 // Time utility functions are declared in time_manager.h

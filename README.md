@@ -89,6 +89,13 @@ This is a [PlatformIO](https://platformio.org/) project. There is no
    joins your WiFi network. From then on, find it at
    `http://<HOSTNAME>.local/` (mDNS) from any device on the same network.
 
+   If the saved network doesn't answer at boot (for example the router is
+   still starting after a power cut), the access point comes up again,
+   and Sprinky keeps trying the saved network once a minute (every 5 minutes
+   after the first 10 tries), pausing while a device is connected to the
+   access point. When it gets through
+   it switches the access point off.
+
 That's the whole setup. Everything past this point — naming valves,
 setting run times, scheduling — is done from the web dashboard, no
 re-flashing required. For your first few weeks, we recommend running
@@ -140,6 +147,25 @@ Changes you make (valve names, run times, schedule, WiFi credentials,
 time zone, location) are saved to the device's flash storage and survive power
 loss and reboots.
 
+## The clock
+
+Sprinky normally takes the time from the internet (NTP). So that a power
+cut or an internet outage doesn't stop the schedule, it also:
+
+- **saves the time to flash every hour** and starts from that after a
+  restart, until internet time arrives. After a power cut the clock is
+  therefore late by about as long as the power was off (plus up to an
+  hour), and watering happens that much late;
+- **takes the time from your browser** whenever the dashboard is open and
+  there is no internet time. This also makes Sprinky usable with no
+  internet at all: connect to its access point, set the time zone on the
+  Setup tab, and the clock is set from your phone or laptop.
+
+The Time card on the Status tab says when the clock isn't on internet
+time. A controller whose clock has never been set (new, and never online
+or opened in a browser) doesn't run the schedule; **Run Watering Sequence
+Now** still works.
+
 ## Scheduling
 
 Set a daily start time and which days of the week to water on. When that
@@ -147,8 +173,32 @@ time arrives (and today is an active day), Sprinky runs through each
 valve in sequence for its configured duration, one at a time — never more
 than one valve open at once.
 
+**Missed runs.** If Sprinky can't start a run on time (a power cut, a
+reboot, or the hour that doesn't exist on the night daylight saving
+starts), it starts the run as soon as it can, up to 3 hours late
+(`CATCHUP_MINUTES` in `config.h`) and only on the same calendar day. It
+remembers in flash that the day's run has started, so a reboot doesn't
+water twice. Two things follow from this:
+
+- Turning **Watering** back on, or enabling today in **Days to Water**,
+  within 3 hours after the start time starts today's run straight away if
+  it hasn't run yet.
+- Changing the start time to one that has already passed today doesn't
+  start a run; the new time first applies tomorrow.
+
+A run that is interrupted part-way (by a reboot, say) is not resumed.
+
 Several independent safeguards keep a valve from being left running:
 
+- **Hard limits** in `config.h` that don't depend on the schedule or the
+  temperature scaling: no valve stays open longer than
+  `MAX_VALVE_SECONDS` (2 hours) in one go, and all valves together are
+  open no longer than `MAX_DAILY_SECONDS` (8 hours) per day. Past the
+  daily limit everything closes and nothing opens again until the next
+  day. (The daily count is kept in memory, so a reboot restarts it.)
+- An optional **master valve**, with an optional "dead-man" circuit that
+  closes it if the processor stops: see
+  [Master valve](#master-valve-optional).
 - A **cycle safety timer** force-stops the whole cycle 5 minutes after it
   should have finished.
 - A manually-triggered **valve test** shuts off automatically after a
@@ -162,6 +212,91 @@ Several independent safeguards keep a valve from being left running:
 
 Software can't detect a welded relay or a mechanically stuck valve,
 though — see [A note on reliability](#a-note-on-reliability).
+
+## Master valve (optional)
+
+A master valve sits upstream of all the zone valves on a relay of its
+own. Sprinky opens it whenever a zone valve is open and closes it when
+the zone closes, so a zone valve that sticks open, or a zone relay that
+welds shut, can't flood by itself: two things have to fail.
+
+To use one, add a relay for it (a one-channel relay module is enough; the
+board's built-in relays all stay as zones) and set the GPIO that drives
+it in `config.h`:
+
+```cpp
+#define MASTER_VALVE_PIN 4
+```
+
+The pin must not be one of the `relay[]` pins (the build stops with an
+error if it is). It's driven at the same active level as the zone relays
+(`RELAY_ACTIVE`). The Valves tab then shows whether the master valve is
+open.
+
+Which pin: on an ESP32, any spare GPIO. On a 4-relay ESP8266 board, a
+spare GPIO such as GPIO4 (GPIO5 is taken if a DS18B20 is fitted). On an
+8-relay ESP8266 board only GPIO2 is left: you lose the heartbeat LED, and
+the pin sends a short burst of boot messages at power-up.
+
+### Dead-man circuit
+
+A steady level on a pin can't tell "valve should be open" from "the
+processor has frozen with the pin high". With
+
+```cpp
+#define MASTER_VALVE_PULSED
+```
+
+as well, the master pin puts out a square wave (about 500 Hz) while a
+valve is open, and only from the main loop, so it stops if the firmware
+stops. The circuit below turns that square wave into relay drive. A pin
+stuck high or low passes nothing through C1, and the relay drops out.
+
+```
++3.3V ─────────────┬───────────┬───────────┬───────────────┐
+                   │ K         │ +         │               │ E
+                  ─┴─         ─┴─         ┌┴┐            ┌─┘
+               D1  ▲       C2 ─┬─      R2 │ │          B │   Q1 BC557 (PNP)
+                   │ A    10µF │     220k └┬┘     ┌──────┤
+       R1     C1   │           │           │  R3  │      └─┐
+GPIO ─[330Ω]──┤├───● N         ● O ────────●─[22k]┘        │ C
+              1µF  │           │                           │
+           ceramic │ K  D2   A │                           │
+                   └────|◄─────┘                           │
+                                                           │
+                          ┌────────────[R4 2.2k]───────────┘
+                          │
+                          │        +5V ────┬─────────────┐
+                          │                │ K           │
+                          │               ─┴─          ┌─┴─┐  K1: 5 V relay coil
+                          │            D3  ▲           │   │  (about 70 Ω, 70 mA)
+                          │        1N4007  │ A         └─┬─┘
+                          │                └─────────────┤
+                          │                              │ C
+                          │                    B       ┌─┘
+                          ●────────────────────────────┤     Q2 BC337 (NPN)
+                          │                            └─┐
+                         ┌┴┐                             │ E
+                      R5 │ │ 10k                         │
+                         └┬┘                             │
+GND ──────────────────────┴──────────────────────────────┴──── board GND
+
+
+K1 contacts (normally open):   24 VAC ────o  o──── master valve solenoid ──── 24 VAC common
+```
+
+D1 and D2 are 1N4148 (D1: anode at N, cathode at +3.3 V; D2: cathode at
+N, anode at O). D3 is the flyback diode across the coil, cathode to +5 V.
+A one-channel relay module with a high-level trigger can replace R4, R5,
+Q2, D3 and K1: connect Q1's collector to its input, with 10 kΩ to ground
+if the module has no pull-down.
+
+**Status of this circuit:** it has been simulated (ngspice), not built.
+In simulation the relay pulls in within 10–90 ms for square waves from
+40 Hz to 2 kHz, rides through a 0.3 s pause, and drops out 0.6–0.9 s
+after the pin freezes high or low. Check it on the bench before trusting
+it. Each time the master valve closes, the Status log shows the rate the
+firmware actually achieved (`Master valve pulse averaged … Hz`).
 
 ## Seasonal schedule profiles
 
@@ -307,6 +442,9 @@ All hardware-specific settings live in `config.h`:
 | `RELAY8` | Define this if you have an 8-valve board; leave it commented out for a 4-valve board. |
 | `relay[]` | **The important one.** GPIO pin number for each relay/valve, in order. Must match your specific board's wiring. |
 | `RELAY_ACTIVE` / `RELAY_INACTIVE` | Some relay boards are active-low (a `LOW` signal turns the relay on) and some are active-high. If your valves come on backwards from what you'd expect, swap these. |
+| `MASTER_VALVE_PIN` / `MASTER_VALVE_PULSED` | Optional master valve on its own relay, and the square-wave drive for the dead-man circuit (see [Master valve](#master-valve-optional)). Both are commented out by default. |
+| `MAX_VALVE_SECONDS` / `MAX_DAILY_SECONDS` | Hard safety limits: longest a single valve may stay open (2 h), and total valve-open time per day (8 h). |
+| `CATCHUP_MINUTES` | How late a missed scheduled run may still start, on the same day (180). |
 | `DS18B20` | Define this to include DS18B20 sensor support (on `TEMP_PIN`). The A0 diode fallback is always included. If neither sensor works, the displayed temperature comes from Open-Meteo, or 70 °F when offline. |
 | `LATITUDE_DEG` / `LONGITUDE_DEG` | Fallback location, used only until the automatic lookup succeeds or if you never enter one on the Setup tab. Normally no need to change. |
 | `RAIN_SKIP[]` | Rain-skip thresholds: rain amount (mm) over the last 24/48/72 hours that skips a scheduled run (see [Rain skip](#rain-skip)). |

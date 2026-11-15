@@ -58,7 +58,6 @@ SprinklerState state = { .wateringDisabled = false,
                          .activeDays = 0x7F,
                          .valveEnabled = 0xFF };
 
-char charBuf[bufferSize];
 // temperature measuring stuff ********************************************
 
 #ifdef DS18B20
@@ -249,7 +248,7 @@ void setup() {
     preferences.putString("timezone", "UTC");
     Serial.println("Initialize Time Zone to UTC");
   }
-  setTime(currentLocalTime());
+  initClock();  // NTP time if we already have it, else the time last saved to flash
   setSyncProvider(currentLocalTime);
   setSyncInterval(300);  // sync time server every 5 minutes
 
@@ -315,16 +314,25 @@ void loop() {
   // timeout otherwise, which would stall the loop (and the watering trigger
   // window) for the whole duration of a WiFi outage. TimeLib's now() keeps
   // free-running off millis() in the meantime, so timekeeping still advances.
+#ifdef MASTER_VALVE_PULSED
+  // An NTP request that gets no reply blocks for a second, long enough for
+  // the dead-man circuit to drop the master valve: leave NTP until the valves
+  // are closed.
+  if (WiFi.status() == WL_CONNECTED && !anyValveOpen()) {
+#else
   if (WiFi.status() == WL_CONNECTED) {
+#endif
     timeClient.update();  // run ntp time client
   }
   processWebCommands(); // web UI valve/run/reboot requests (only loop() touches valves/timer)
   controlRelays();      // activate relay if correct time
   valveWatchdog();      // last-resort: close any valve open past its limit
+  masterValveService(); // after the watchdog: pulses only for a valve it has just passed
   ElegantOTA.loop();
 
   if (millis() - lastHousekeepingMs >= 1000) {  // once per second housekeeping (rollover-safe)
     timer.tick();                        // tick the timer (to shut down valve tests after two minutes)
+    clockService();                      // adopt NTP / browser time when offered; save the time hourly
     state.cur_temp = getTempF();         // sample sensor here (loop ctx); web handlers read the cache
     updateHourlyTempAverage();
     updateAutoSeason();                  // follow calendar seasons unless manually overridden
