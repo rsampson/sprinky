@@ -94,6 +94,26 @@ constexpr RainSkip RAIN_SKIP[] = {
   { 72, 25.0f },  // 1"
 };
 
+// Rain credit: a run is also skipped while rain from the last 7 days is still
+// in the soil. Each day's rain beyond RAIN_INTERCEPT_MM (the part that only
+// wets leaves and mulch) is banked, up to RAIN_CREDIT_MAX_MM (what the root
+// zone holds: lower for sand or shallow roots, higher for clay), and each
+// day's ET0 uses it up. The run is skipped while at least half a day's ET0
+// is left.
+constexpr float RAIN_INTERCEPT_MM = 1.0f;
+constexpr float RAIN_CREDIT_MAX_MM = 15.0f;
+
+// Forecast skip: a run is skipped if at least RAIN_FORECAST_MM is forecast
+// for the next 24 hours, counting only hours with a rain probability of
+// RAIN_FORECAST_MIN_PROB percent or more. Never two runs in a row, and not
+// when the next scheduled day is more than 2 days away.
+constexpr float RAIN_FORECAST_MM = 5.0f;
+constexpr int RAIN_FORECAST_MIN_PROB = 70;
+
+// Freeze skip: a scheduled run is skipped when the outside temperature is
+// below this (F) at start time.
+constexpr float FREEZE_SKIP_F = 37.0f;
+
 // Relay active level. Some relay boards are active-low (a LOW signal closes the
 // relay contact / opens the valve). Swap these if your valves energize backwards.
 #define RELAY_ACTIVE HIGH

@@ -47,6 +47,8 @@ const char INDEX_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
       <div class="card">
         <div class="card-label">💧 Last Run</div>
         <div id="runtime" class="card-value">--</div>
+        <div id="lastskip" class="card-sub"></div>
+        <div id="raincredit" class="card-sub"></div>
       </div>
     </div>
 
@@ -721,6 +723,8 @@ const char APP_JS[] PROGMEM = R"JS(
     $('rssi').textContent = s.rssi + ' dBm';
     $('ip').textContent = s.ip;
     $('runtime').textContent = s.lastRunMinutes + ' min';
+    $('lastskip').textContent = s.lastSkip ? 'Last skip: ' + s.lastSkip : '';
+    $('raincredit').textContent = s.rainCreditMm === undefined ? '' : 'Rain in soil: ' + s.rainCreditMm.toFixed(1) + ' mm';
 
     $('water-toggle').checked = !s.disabled;
     $('water-state').textContent = s.disabled ? 'Watering OFF' : 'Watering ON';

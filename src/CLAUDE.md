@@ -108,6 +108,9 @@ Almost all per-device and per-hardware variation is compile-time:
   one is `siteLat`/`siteLon` (see `weather.cpp`).
 - **`RAIN_SKIP[]`** — `{hours, mm}` rain-skip tiers (24 h 2.5 mm, 48 h 13 mm,
   72 h 25 mm), ascending by `hours`.
+- **`RAIN_INTERCEPT_MM`** (1) / **`RAIN_CREDIT_MAX_MM`** (15) — rain-credit
+  skip; **`RAIN_FORECAST_MM`** (5) / **`RAIN_FORECAST_MIN_PROB`** (70) —
+  forecast skip; **`FREEZE_SKIP_F`** (37) — freeze skip.
 - **`ET_REFERENCE[]`** — per-season typical day: Hargreaves inputs
   (`dayOfYear`, `meanF`, `rangeF`) and `et0mm`, the Penman-Monteith ET₀
   (mm/day) reference for the Open-Meteo source.
@@ -213,9 +216,10 @@ struct and externs). No class hierarchy.
     out** — check before assuming it runs.
   - `/api/run` ("Run Watering Sequence Now") bypasses both the `activeDays`
     check and the daily start time, and the rain skip.
-  - **Rain skip**: the scheduled trigger sets `lastAutoRunDayKey` first, then
-    calls `startCycle()` only if `!recentRainSkip()` (`weather.cpp`), so a
-    skipped day isn't retried within the catch-up window.
+  - **Freeze / rain skip**: the scheduled trigger sets `lastAutoRunDayKey`
+    first, then skips if `state.cur_temp < FREEZE_SKIP_F`, else calls
+    `startCycle()` only if `!recentRainSkip()` (`weather.cpp`), so a skipped
+    day isn't retried within the catch-up window.
 - **`wifi_manager.cpp` / `.h`** — Wi-Fi as an explicit state machine
   (`DISCONNECTED → CONNECTING → CONNECTED`, periodic connectivity checks,
   hard-reset-and-retry on failure). Falls back to AP mode (`ap_mode` global) at
@@ -272,15 +276,27 @@ struct and externs). No class hierarchy.
   the last minute and the last attempt is ≥ 15 min old, so a device with a
   working sensor never requests it. Unlike ET0 it doesn't wait for NTP sync.
 
-  `recentRainSkip()` is a **blocking**, on-demand request (hourly
-  `precipitation`, `past_hours` = the last `RAIN_SKIP[]` tier, `forecast_hours=2`
-  so the hour in progress is included, `timezone=GMT`), called from
-  `controlRelays()` when a scheduled cycle is due. It sums back from the newest
-  hour and returns true if any `RAIN_SKIP[]` tier (`config.h`, ascending
-  `hours`) is met. It fails open (no WiFi / HTTP / JSON error → water) and
-  suspends the ESP32 loop watchdog like `updateWeather()`. Its
-  `DynamicJsonDocument` has +32 bytes for the copied key strings; without them
-  parsing fails with `NoMemory`.
+  `recentRainSkip()` is a **blocking**, on-demand request called from
+  `controlRelays()` when a scheduled cycle is due: daily `precipitation_sum`
+  and `et0_fao_evapotranspiration` (`past_days=7`, `timezone=auto`) plus
+  hourly `precipitation` and `precipitation_probability` (`past_hours` = the
+  last `RAIN_SKIP[]` tier, `forecast_hours=26`). In the hourly arrays index
+  `past_hours` is the current hour, the next is the hour in progress, and the
+  24 forecast hours follow. It skips, in this order, if (1) any `RAIN_SKIP[]`
+  tier is met; (2) the rain credit (7 days of `max(0, rain −
+  RAIN_INTERCEPT_MM)` banked up to `RAIN_CREDIT_MAX_MM`, each day's ET₀
+  subtracted, floor 0, plus rain so far today) is at least half of yesterday's
+  ET₀; (3) forecast rain in hours with probability ≥ `RAIN_FORECAST_MIN_PROB`
+  reaches `RAIN_FORECAST_MM`, the previous run wasn't a forecast skip (NVS
+  `fcSkip`) and the next active day is ≤ 2 days away. The credit is recomputed
+  from the API each time, never stored. The body is parsed twice (probability
+  only when step 3 is reached) so the two 98-element arrays are never in RAM
+  together. It fails open (no WiFi / HTTP / JSON error → water) and suspends
+  the ESP32 loop watchdog like `updateWeather()`. Each `DynamicJsonDocument`
+  has extra bytes for the copied key strings; without them parsing fails with
+  `NoMemory`. Every outcome is logged with its reason; `noteSkip()` keeps the
+  last skip ("MM/DD reason", RAM only) for `/api/status` (`lastSkip`,
+  `rainCreditMm`).
 - **`web_server.cpp` / `.h`** — owns the single `AsyncWebServer server` (port
   80) and `setUpWebServer()`, called from `setup()`. `ElegantOTA.begin(&server)`
   runs right after on the same instance, so `/update` works unchanged. Serves
@@ -308,7 +324,8 @@ struct and externs). No class hierarchy.
 `tempScale` (bool, default `false`), `locSrc` (`uint8`: 0 default, 1 auto,
 2 manual) with `lat`/`lon` (float; unused when `locSrc` is 0), `valveEn`
 (`uint8` enabled-valve mask), `lastRun` (`long`, YYYYMMDD of the last
-scheduled trigger, or -1), `clock` (`ulong`, UTC epoch saved hourly), `curSeason` (`uint8`, 0-3, default `0` =
+scheduled trigger, or -1), `fcSkip` (bool, the last scheduled run was skipped
+on a rain forecast), `clock` (`ulong`, UTC epoch saved hourly), `curSeason` (`uint8`, 0-3, default `0` =
 Summer), `calSeason` (`uint8`, 0-3, the last calendar season seen by
 `updateAutoSeason()`; absent until the first NTP-synced boot).
 

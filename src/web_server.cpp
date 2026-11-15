@@ -84,6 +84,8 @@ static void handleStatus(AsyncWebServerRequest *request) {
   doc["disabled"] = state.wateringDisabled;
   doc["tempScaling"] = state.tempScaling;
   doc["etSource"] = etSource;
+  if (weatherRainCredit() >= 0) doc["rainCreditMm"] = (int)(weatherRainCredit() * 10 + 0.5f) / 10.0f;
+  doc["lastSkip"] = lastSkipReason();  // const char*: pointer stored, not copied
   doc["runHour"] = state.runHour;
   doc["runMinute"] = state.runMinute;
   doc["activeDays"] = state.activeDays;

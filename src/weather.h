@@ -3,7 +3,10 @@
 // Open-Meteo daily reference evapotranspiration (FAO-56 Penman-Monteith).
 void updateWeather();          // once/second from loop(): fetch yesterday's ET0 when due
 bool weatherEt0(float &mm);    // true (and mm set) only if the cached value is for yesterday
-bool recentRainSkip();         // blocking: true if recent rain meets a RAIN_SKIP tier
+bool recentRainSkip();         // blocking: true if recent, banked or forecast rain says skip this run
+float weatherRainCredit();     // mm of rain still banked at the last rain check; <0 before the first
+void noteSkip(const char *why);  // record why a scheduled run was skipped (with today's date)
+const char *lastSkipReason();  // "MM/DD reason" of the last skipped run, "" if none since boot
 bool weatherTempF(float &f);   // Open-Meteo current air temp, if fetched in the last hour
 
 // Site location (degrees, north/east positive): entered on the Setup page, else

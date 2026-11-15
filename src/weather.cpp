@@ -215,14 +215,75 @@ static String tenths(float v) {
   return String((int)(v * 10) / 10) + "." + String((int)(v * 10) % 10);
 }
 
-static bool rainSkipCheck() {
+// --- Rain skip ---
+// Decided once, when a scheduled run is due, from one Open-Meteo request:
+//   1. recent rain: any RAIN_SKIP tier met (the long-standing rule);
+//   2. rain credit: rain banked over the last RAIN_CREDIT_DAYS, less the ET0
+//      that has used it up since, still covers at least half a day;
+//   3. forecast: enough likely rain in the next RAIN_FORECAST_HOURS.
+// Nothing is stored between runs except "the last run was skipped on a
+// forecast" (fcSkip), so a forecast that fails can't skip twice running.
+static const int RAIN_CREDIT_DAYS = 7;
+static const int RAIN_FORECAST_HOURS = 24;
+static const float RAIN_CREDIT_SKIP_FRACTION = 0.5f;  // of yesterday's ET0
+static const int RAIN_FORECAST_MAX_GAP_DAYS = 2;      // no forecast skip if the next run is further off
+
+static float rainCreditMm = -1;  // as of the last check; <0 until one succeeds
+static char lastSkip[32] = "";   // "MM/DD reason" of the last skipped run, RAM only
+
+float weatherRainCredit() {
+  return rainCreditMm;
+}
+
+const char *lastSkipReason() {
+  return lastSkip;
+}
+
+void noteSkip(const char *why) {
+  const time_t t = now();
+  snprintf(lastSkip, sizeof(lastSkip), "%02d/%02d %s", month(t), day(t), why);
+}
+
+// Days until the next active day after today (1-7).
+static int daysToNextRun() {
+  for (int k = 1; k <= 7; k++) {
+    if (state.activeDays & (1 << ((weekday() - 1 + k) % 7))) return k;
+  }
+  return 7;
+}
+
+// Likely rain in the forecast hours: the amounts in `fc`, counting only hours
+// whose probability is at least RAIN_FORECAST_MIN_PROB. Parsed from `body` in
+// a second pass so the two big hourly arrays are never in memory together.
+static bool forecastRain(const String &body, const float *fc, int firstForecast, int hours, float &mm) {
+  StaticJsonDocument<64> filter;
+  filter["hourly"]["precipitation_probability"] = true;
+  // +48: the copied key strings.
+  DynamicJsonDocument doc(2 * JSON_OBJECT_SIZE(1) + JSON_ARRAY_SIZE(hours) + 48);
+  if (deserializeJson(doc, body, DeserializationOption::Filter(filter))) return false;
+  mm = 0;
+  int i = 0;
+  for (JsonVariant v : doc["hourly"]["precipitation_probability"].as<JsonArray>()) {
+    if (i >= firstForecast && i < hours && v.as<int>() >= RAIN_FORECAST_MIN_PROB) mm += fc[i - firstForecast];
+    i++;
+  }
+  return i == hours;
+}
+
+// True = skip this run. byForecast is set when the forecast was the reason.
+static bool rainSkipCheck(bool &byForecast) {
   const int tiers = sizeof(RAIN_SKIP) / sizeof(RAIN_SKIP[0]);
-  // Hourly values are the preceding hour's total, so forecast_hours=2 adds the
-  // hour in progress (stamped next hour). Newest last.
+  const int pastH = RAIN_SKIP[tiers - 1].hours;
+  // Hourly values are the preceding hour's total. Index pastH is stamped with
+  // the current hour, pastH + 1 is the hour in progress, the forecast follows.
+  const int newest = pastH + 1;
+  const int hours = pastH + 2 + RAIN_FORECAST_HOURS;
+  const int days = RAIN_CREDIT_DAYS + 1;  // + today, unused: it mixes fallen and forecast rain
   String url = "http://api.open-meteo.com/v1/forecast?latitude=" + String(siteLat, 4) +
                "&longitude=" + String(siteLon, 4) +
-               "&hourly=precipitation&past_hours=" + String(RAIN_SKIP[tiers - 1].hours) +
-               "&forecast_hours=2&timezone=GMT";
+               "&daily=precipitation_sum,et0_fao_evapotranspiration&past_days=" + String(RAIN_CREDIT_DAYS) +
+               "&forecast_days=1&hourly=precipitation,precipitation_probability&past_hours=" + String(pastH) +
+               "&forecast_hours=" + String(RAIN_FORECAST_HOURS + 2) + "&timezone=auto&timeformat=unixtime";
   String body;
   const int code = httpGet(url, body);
   if (code != HTTP_CODE_OK) {
@@ -230,51 +291,138 @@ static bool rainSkipCheck() {
     return false;
   }
 
-  StaticJsonDocument<64> filter;
+  StaticJsonDocument<3 * JSON_OBJECT_SIZE(2)> filter;
   filter["hourly"]["precipitation"] = true;
-  // +32: the copied key strings "hourly" and "precipitation". Too small and
-  // deserializeJson() fails with NoMemory.
-  DynamicJsonDocument doc(JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(1) +
-                          JSON_ARRAY_SIZE(RAIN_SKIP[tiers - 1].hours + 2) + 32);
+  filter["daily"]["precipitation_sum"] = true;
+  filter["daily"]["et0_fao_evapotranspiration"] = true;
+  // +96: the copied key strings. Too small and deserializeJson() fails with
+  // NoMemory.
+  DynamicJsonDocument doc(JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(2) +
+                          JSON_ARRAY_SIZE(hours) + 2 * JSON_ARRAY_SIZE(days) + 96);
   if (deserializeJson(doc, body, DeserializationOption::Filter(filter))) {
     webPrint("Rain check failed (json), watering anyway\n");
     return false;
   }
-  JsonArray p = doc["hourly"]["precipitation"];
-  if (p.isNull() || (int)p.size() < RAIN_SKIP[tiers - 1].hours) {
+
+  // Hourly: tier sums back from the newest hour, rain so far today, forecast.
+  float tierSum[sizeof(RAIN_SKIP) / sizeof(RAIN_SKIP[0])] = {};
+  float fc[RAIN_FORECAST_HOURS] = {};
+  float today = 0;
+  const int hourNow = hour();
+  int n = 0;
+  for (JsonVariant v : doc["hourly"]["precipitation"].as<JsonArray>()) {
+    const float mm = v.as<float>();  // null reads as 0
+    if (n <= newest) {
+      const int back = newest - n;  // 0 = the hour in progress
+      for (int t = 0; t < tiers; t++) {
+        if (back < RAIN_SKIP[t].hours) tierSum[t] += mm;
+      }
+      if (back <= hourNow) today += mm;
+    } else if (n < hours) {
+      fc[n - newest - 1] = mm;
+    }
+    n++;
+  }
+
+  // Daily: the last RAIN_CREDIT_DAYS whole days, oldest first.
+  float rain[RAIN_CREDIT_DAYS], et[RAIN_CREDIT_DAYS];
+  int nr = 0, ne = 0;
+  bool etOk = true;
+  for (JsonVariant v : doc["daily"]["precipitation_sum"].as<JsonArray>()) {
+    if (nr < RAIN_CREDIT_DAYS) rain[nr] = v.as<float>();
+    nr++;
+  }
+  for (JsonVariant v : doc["daily"]["et0_fao_evapotranspiration"].as<JsonArray>()) {
+    if (ne < RAIN_CREDIT_DAYS) {
+      et[ne] = v.as<float>();
+      // A missing ET0 reads as 0 and would leave the credit undrained.
+      if (v.isNull() || !isfinite(et[ne]) || et[ne] < 0.0f || et[ne] > 20.0f) etOk = false;
+    }
+    ne++;
+  }
+  if (n != hours || nr != days || ne != days || !etOk) {
     webPrint("Rain check failed (short), watering anyway\n");
     return false;
   }
 
-  // Walk back from the newest hour; check each tier when its window is summed.
-  float sum = 0;
-  bool skip = false;
+  // Rain credit: each day banks its rain beyond what only wets the surface,
+  // up to what the soil holds, then that day's ET0 uses some up.
+  float credit = 0;
+  for (int d = 0; d < RAIN_CREDIT_DAYS; d++) {
+    credit = min(RAIN_CREDIT_MAX_MM, credit + max(0.0f, rain[d] - RAIN_INTERCEPT_MM));
+    credit = max(0.0f, credit - et[d]);
+  }
+  credit = min(RAIN_CREDIT_MAX_MM, credit + max(0.0f, today - RAIN_INTERCEPT_MM));
+  rainCreditMm = credit;
+  const float need = RAIN_CREDIT_SKIP_FRACTION * et[RAIN_CREDIT_DAYS - 1];
+
   String totals;
-  int t = 0;
-  for (int h = 1; h <= RAIN_SKIP[tiers - 1].hours; h++) {
-    sum += p[p.size() - h].as<float>();  // null reads as 0
-    if (h == RAIN_SKIP[t].hours) {
-      if (sum >= RAIN_SKIP[t].mm) skip = true;
-      totals += (t ? ", " : "") + String(h) + "h " + tenths(sum) + "mm";
-      t++;
+  for (int t = 0; t < tiers; t++) {
+    totals += (t ? ", " : "") + String(RAIN_SKIP[t].hours) + "h " + tenths(tierSum[t]) + "mm";
+  }
+  webPrint("Rain fallen: %s. Still banked in soil: %smm (skip at %smm = half of yesterday's ET0)\n",
+           totals.c_str(), tenths(credit).c_str(), tenths(need).c_str());
+
+  for (int t = 0; t < tiers; t++) {
+    if (tierSum[t] >= RAIN_SKIP[t].mm) {
+      webPrint("Skipping watering: %smm of rain in the last %dh (limit %smm)\n", tenths(tierSum[t]).c_str(),
+               RAIN_SKIP[t].hours, tenths(RAIN_SKIP[t].mm).c_str());
+      noteSkip("recent rain");
+      return true;
     }
   }
-  webPrint("Rain: %s -> %s\n", totals.c_str(), skip ? "skipping watering" : "watering");
-  return skip;
+  if (credit > 0.0f && credit >= need) {
+    webPrint("Skipping watering: earlier rain still covers today's need\n");
+    noteSkip("rain still in soil");
+    return true;
+  }
+
+  float likely = 0;
+  if (!forecastRain(body, fc, newest + 1, hours, likely)) {
+    webPrint("Watering: not enough recent rain, and the forecast couldn't be read\n");
+    return false;
+  }
+  const String fcText = tenths(likely) + "mm of rain is at least " + String(RAIN_FORECAST_MIN_PROB) +
+                        "% likely in the next " + String(RAIN_FORECAST_HOURS) + "h";
+  if (likely < RAIN_FORECAST_MM) {
+    webPrint("Watering: not enough recent rain, and only %s (skip at %smm)\n", fcText.c_str(),
+             tenths(RAIN_FORECAST_MM).c_str());
+    return false;
+  }
+  if (preferences.getBool("fcSkip", false)) {
+    webPrint("Watering: %s, but the last run was already skipped on a forecast\n", fcText.c_str());
+    return false;
+  }
+  const int gap = daysToNextRun();
+  if (gap > RAIN_FORECAST_MAX_GAP_DAYS) {
+    webPrint("Watering: %s, but the next run is %d days away\n", fcText.c_str(), gap);
+    return false;
+  }
+  webPrint("Skipping watering: %s\n", fcText.c_str());
+  noteSkip("rain forecast");
+  byForecast = true;
+  return true;
 }
 
 // Called when a scheduled cycle is due. Fails open: no WiFi or a bad response
 // means water as usual.
 bool recentRainSkip() {
-  if (WiFi.status() != WL_CONNECTED || ap_mode) return false;
+  bool byForecast = false;
+  bool skip = false;
+  if (WiFi.status() != WL_CONNECTED || ap_mode) {
+    webPrint("Rain check: no WiFi, watering anyway\n");
+  } else {
 #if defined(ESP32)
-  disableLoopWDT();  // a slow DNS/connect can outlast the 5 s loop watchdog
-  const bool skip = rainSkipCheck();
-  enableLoopWDT();
-  return skip;
+    disableLoopWDT();  // a slow DNS/connect can outlast the 5 s loop watchdog
+    skip = rainSkipCheck(byForecast);
+    enableLoopWDT();
 #else
-  return rainSkipCheck();  // HTTPClient yields, which feeds the ESP8266 watchdog
+    skip = rainSkipCheck(byForecast);  // HTTPClient yields, which feeds the ESP8266 watchdog
 #endif
+  }
+  // Flash is written only when this changes.
+  if (preferences.getBool("fcSkip", false) != byForecast) preferences.putBool("fcSkip", byForecast);
+  return skip;
 }
 
 bool weatherTempF(float &f) {

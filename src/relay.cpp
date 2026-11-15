@@ -412,8 +412,14 @@ void controlRelays() {
   bool inWindow = (nowMins >= schedMins) && (nowMins < schedMins + CATCHUP_MINUTES);
   // Not on a clock that has never been set (it would count from 1970).
   if (clockIsSet() && todayActive && inWindow && dayKey != lastAutoRunDayKey && state.runCycle == false) {  // trigger start of cycle
-    setAutoRunLatch(dayKey);  // set first: a rain-skipped day isn't retried
-    if (!recentRainSkip()) startCycle();
+    setAutoRunLatch(dayKey);  // set first: a skipped day isn't retried
+    if (state.cur_temp < FREEZE_SKIP_F) {
+      webPrint("Skipping watering: %dF outside is below the %dF freeze limit\n", (int)state.cur_temp,
+               (int)FREEZE_SKIP_F);
+      noteSkip("freeze");
+    } else if (!recentRainSkip()) {
+      startCycle();
+    }
   }
 
   if (state.runCycle == true) {  // run watering cycle if is time

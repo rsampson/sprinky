@@ -325,8 +325,11 @@ The Temperature scaling toggle is a single global setting, not per-season.
 
 ## Rain skip
 
-When a scheduled run is due, Sprinky asks Open-Meteo how much rain fell at
-your location and skips that day's run if any of these is met:
+When a scheduled run is due, Sprinky asks Open-Meteo about rain at your
+location and skips that day's run for any of three reasons. The Status tab
+logs what it found and why it watered or skipped.
+
+**1. Recent rain.** Any of these is met:
 
 | Rain in the last… | Skip if at least |
 |---|---|
@@ -334,15 +337,45 @@ your location and skips that day's run if any of these is met:
 | 48 hours | 13 mm (0.5") |
 | 72 hours | 25 mm (1") |
 
-So light rain skips one day and a real soaking skips up to three. The
-Status tab logs a `Rain: …` line with the totals each time. The amounts
-are in `RAIN_SKIP[]` in `config.h`: raise them for sandy soil, lower them
-for clay. Rain skip is always on, works whether or not temperature scaling
-is on, and never blocks **Run Watering Sequence Now**. If Open-Meteo can't
-be reached, Sprinky waters as normal. Open-Meteo's rainfall is modeled for
-a 1–10 km area, not measured in your yard, so a very local shower can be
+**2. Rain still in the soil.** Sprinky adds up the last 7 days: each day's
+rain beyond the first 1 mm (which only wets leaves and mulch) is banked, up
+to 15 mm (about what a lawn's root zone holds), and each day's
+evapotranspiration (ET₀) uses some of it up. The run is skipped while at
+least half a day's worth is left. A good soaking in cool weather therefore
+holds watering off for a week or more, where the table above gives up
+after three days.
+
+**3. Rain on the way.** At least 5 mm is forecast for the next 24 hours,
+counting only hours where rain is 70% likely or more. Because forecasts
+miss, this never skips two runs in a row, and it's not used when the next
+scheduled day is more than 2 days away.
+
+For example:
+
+```
+Rain fallen: 24h 0.0mm, 48h 3.1mm, 72h 11.6mm. Still banked in soil: 6.2mm (skip at 0.6mm = half of yesterday's ET0)
+Skipping watering: earlier rain still covers today's need
+```
+
+The Last Run card shows the most recent skip and the rain still banked;
+`/api/status` has them as `lastSkip` and `rainCreditMm`. The amounts are in
+`config.h` (`RAIN_SKIP[]`, `RAIN_INTERCEPT_MM`, `RAIN_CREDIT_MAX_MM`,
+`RAIN_FORECAST_MM`, `RAIN_FORECAST_MIN_PROB`): for sandy soil or shallow
+roots lower `RAIN_CREDIT_MAX_MM`, for clay raise it.
+
+Rain skip is always on, works whether or not temperature scaling is on,
+and never blocks **Run Watering Sequence Now**. If Open-Meteo can't be
+reached, Sprinky waters as normal. Open-Meteo's rainfall is modeled for a
+1–10 km area, not measured in your yard, so a very local shower can be
 missed. It's only checked when the run starts: rain that begins during a
 run doesn't stop it.
+
+## Freeze skip
+
+A scheduled run is also skipped when the outside temperature is below
+37 °F (`FREEZE_SKIP_F` in `config.h`) at start time. It uses the same
+temperature the Status tab shows, so with no sensor and no internet (a
+fixed 70 °F) it never triggers.
 
 ## Temperature-adjusted watering
 
@@ -448,6 +481,9 @@ All hardware-specific settings live in `config.h`:
 | `DS18B20` | Define this to include DS18B20 sensor support (on `TEMP_PIN`). The A0 diode fallback is always included. If neither sensor works, the displayed temperature comes from Open-Meteo, or 70 °F when offline. |
 | `LATITUDE_DEG` / `LONGITUDE_DEG` | Fallback location, used only until the automatic lookup succeeds or if you never enter one on the Setup tab. Normally no need to change. |
 | `RAIN_SKIP[]` | Rain-skip thresholds: rain amount (mm) over the last 24/48/72 hours that skips a scheduled run (see [Rain skip](#rain-skip)). |
+| `RAIN_INTERCEPT_MM` / `RAIN_CREDIT_MAX_MM` | Rain still in the soil: how much of each day's rain is ignored (1 mm) and the most that can be banked (15 mm). |
+| `RAIN_FORECAST_MM` / `RAIN_FORECAST_MIN_PROB` | Forecast skip: rain needed in the next 24 hours (5 mm), counting only hours at least this likely (70%). |
+| `FREEZE_SKIP_F` | Scheduled runs are skipped below this outside temperature (37 °F). |
 | `ET_REFERENCE[]` | A typical day for each season profile, which the scaling compares against: its ET₀ in mm/day (for the Open-Meteo method), plus day of year, average temperature and daily high–low gap (for the sensor method). The defaults are rough Southern California values; adjust them using the `ET0 …` lines logged on the Status tab. |
 | `DIODE_MV_AT_32F` / `DIODE_MV_AT_212F` | Diode calibration: its voltage in ice water and in boiling water. Recalibrate if you change the diode or its bias resistor/supply. |
 | `ESP8266_A0_FULL_SCALE_MV` | ESP8266 only: `1000` for a bare ESP-12E/F module, `3200` for NodeMCU/Wemos D1 boards with the on-board voltage divider. |
