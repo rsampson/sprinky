@@ -442,6 +442,7 @@ pre#log {
 
 .valve-row {
   display: flex;
+  flex-wrap: wrap;  /* on a narrow screen the slider drops to its own line instead of shrinking to nothing */
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) 0;
@@ -475,7 +476,11 @@ pre#log {
   border-color: var(--aqua-500);
   box-shadow: 0 0 0 2px var(--aqua-500);
 }
-.valve-row .runtime-val { min-width: 3.5rem; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink-secondary); }
+/* The slider takes all the row's spare width (90 steps need the room), but never
+   less than 10rem, below which it wraps to its own line. The label has a fixed
+   width wide enough for "14 min 50 s" so it doesn't resize the slider mid-drag. */
+.valve-row input[type="range"] { flex: 1 1 10rem; min-width: 10rem; }
+.valve-row .runtime-val { min-width: 6rem; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink-secondary); }
 
 .btn {
   display: inline-block;
@@ -576,26 +581,24 @@ const char APP_JS[] PROGMEM = R"JS(
     });
   });
 
-  // The valve run-time sliders are shown to the user in fractional minutes to
-  // make setting them more natural; everything else (API, state, schedule)
-  // stays in whole seconds. secToMin()/minToSec() convert at that boundary.
-  function secToMin(sec) { return sec / 60; }
-  function minToSec(min) { return Math.round(min * 60); }
-  function fmtMinutes(min) {
-    // up to two decimals, but drop trailing zeros and a bare decimal point:
-    // 5 -> "5 min", 2.5 -> "2.5 min", 0.25 -> "0.25 min"
-    const s = (Math.round(min * 100) / 100).toFixed(2).replace(/\.?0+$/, '');
-    return (s === '' ? '0' : s) + ' min';
+  // The valve run-time sliders work directly in whole seconds (10 s steps), the
+  // same unit the API and state use. fmtDuration() renders them for people:
+  // 300 -> "5 min", 310 -> "5 min 10 s", 40 -> "40 s".
+  function fmtDuration(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m === 0) return s + ' s';
+    return s === 0 ? m + ' min' : m + ' min ' + s + ' s';
   }
 
-  // Sum every valve slider (values are in minutes) and show the running total
+  // Sum every valve slider (values are in seconds) and show the running total
   // just above the Save button. Called on initial render and on every drag.
   function updateValveTotal() {
     let total = 0;
     for (let i = 0; i < numValves; i++) {
-      if ($('valve-en-' + i).checked) total += parseFloat($('valve-slider-' + i).value);
+      if ($('valve-en-' + i).checked) total += parseInt($('valve-slider-' + i).value, 10);
     }
-    $('valve-total').textContent = 'Total watering time: ' + fmtMinutes(total);
+    $('valve-total').textContent = 'Total watering time: ' + fmtDuration(total);
   }
 
   function buildValveUI(valves) {
@@ -631,7 +634,7 @@ const char APP_JS[] PROGMEM = R"JS(
           'placeholder="Valve ' + (i + 1) + ' name" ' +
           'aria-label="Name for valve ' + (i + 1) + '" ' +
           'title="Tap to rename this valve"></span>' +
-        '<input type="range" id="valve-slider-' + i + '" min="0.25" max="15" step="0.25" value="5">' +
+        '<input type="range" id="valve-slider-' + i + '" min="10" max="900" step="10" value="300">' +
         '<span class="runtime-val" id="valve-runtime-' + i + '"></span>';
       configEl.appendChild(row);
 
@@ -640,7 +643,7 @@ const char APP_JS[] PROGMEM = R"JS(
         updateValveTotal();
       });
       $('valve-slider-' + i).addEventListener('input', (e) => {
-        $('valve-runtime-' + i).textContent = fmtMinutes(parseFloat(e.target.value));
+        $('valve-runtime-' + i).textContent = fmtDuration(parseInt(e.target.value, 10));
         updateValveTotal();
       });
     });
@@ -654,8 +657,9 @@ const char APP_JS[] PROGMEM = R"JS(
   function fillValveFields(valves) {
     valves.forEach((v, i) => {
       $('valve-name-' + i).value = v.name;
-      $('valve-slider-' + i).value = secToMin(v.runtime);
-      $('valve-runtime-' + i).textContent = fmtMinutes(secToMin(v.runtime));
+      const slider = $('valve-slider-' + i);
+      slider.value = v.runtime;  // the browser snaps this to the 10 s step...
+      $('valve-runtime-' + i).textContent = fmtDuration(parseInt(slider.value, 10));  // ...so show what Save will send
       $('valve-en-' + i).checked = v.enabled;
       $('valve-row-' + i).classList.toggle('off', !v.enabled);
     });
@@ -836,7 +840,7 @@ const char APP_JS[] PROGMEM = R"JS(
     for (let i = 0; i < numValves; i++) {
       valves.push({
         name: $('valve-name-' + i).value,
-        runtime: minToSec(parseFloat($('valve-slider-' + i).value)),
+        runtime: parseInt($('valve-slider-' + i).value, 10),
         enabled: $('valve-en-' + i).checked,
       });
     }
